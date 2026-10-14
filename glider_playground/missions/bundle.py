@@ -6,6 +6,7 @@
 On a server, copy the zip into <cache root>/missions/inbox/ (scp / the admin file manager); it is imported the
 next time the mission list is requested. Files are stored uncompressed in the zip (NetCDF is already compressed).
 """
+
 import json
 import logging
 import os
@@ -34,11 +35,11 @@ def pack(mission_id: str, out: str | None = None) -> Path:
             if not rec:
                 missing.append(p.get("key"))
                 continue
-            p["file"] = rec["name"]                    # pin the bundle to the file actually packed
+            p["file"] = rec["name"]  # pin the bundle to the file actually packed
             if rec["name"] not in manifest:
                 z.write(rec["path"], f"data/{rec['name']}")
                 manifest[rec["name"]] = {"mtime": os.path.getmtime(rec["path"]), "size": os.path.getsize(rec["path"])}
-        z.writestr("manifest.json", json.dumps(manifest, indent=2))      # exact mtimes: import keeps the newest copy
+        z.writestr("manifest.json", json.dumps(manifest, indent=2))  # exact mtimes: import keeps the newest copy
         z.writestr("mission.json", json.dumps(packed, indent=2, ensure_ascii=False))
     if missing:
         logger.warning("Packed without data for: %s", ", ".join(missing))
@@ -66,12 +67,12 @@ def import_zip(path: str | Path) -> dict:
         have = ml._file_index()
         data_dir = ml.DATA_DIR / mid
         for info in z.infolist():
-            name = Path(info.filename).name                  # flatten: never trust paths inside a zip
+            name = Path(info.filename).name  # flatten: never trust paths inside a zip
             if info.is_dir() or not info.filename.startswith("data/") or not name.lower().endswith(".nc"):
                 continue
             mtime = (manifest.get(name) or {}).get("mtime") or time.mktime(info.date_time + (0, 0, -1))
             old = have.get(name.lower())
-            if old and old.get("exists") and old.get("mtime", 0) >= mtime - 2:      # zip timestamps are 2 s coarse
+            if old and old.get("exists") and old.get("mtime", 0) >= mtime - 2:  # zip timestamps are 2 s coarse
                 files.append({"name": name, "action": "kept existing (same or newer)"})
                 continue
             data_dir.mkdir(parents=True, exist_ok=True)

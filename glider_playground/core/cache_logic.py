@@ -60,11 +60,11 @@ REGISTRY_FILE = CACHE_ROOT / "registry.json"
 def _resolve_data_dir() -> Path:
     """Where managed live-deployment downloads live and get auto-scanned.
 
-      1. ``GP_DATA_DIR`` env var, if set, always wins.
-      2. A source checkout (``.git`` beside the package) keeps using the repo's
-         ``data/`` folder, so the dev workflow is unchanged.
-      3. Everything else — a pip install — uses a user-writable folder
-         alongside our other state (``~/.glider_playground/data``).
+    1. ``GP_DATA_DIR`` env var, if set, always wins.
+    2. A source checkout (``.git`` beside the package) keeps using the repo's
+       ``data/`` folder, so the dev workflow is unchanged.
+    3. Everything else — a pip install — uses a user-writable folder
+       alongside our other state (``~/.glider_playground/data``).
     """
     env = os.environ.get("GP_DATA_DIR")
     if env:
@@ -98,13 +98,16 @@ PLOTCACHE_DIR.mkdir(exist_ok=True)
 # staying flat. No-op on macOS/musl.
 try:
     import ctypes
+
     _libc = ctypes.CDLL("libc.so.6")
+
     def _malloc_trim():
         try:
             _libc.malloc_trim(0)
         except Exception:
             pass
 except Exception:
+
     def _malloc_trim():
         pass
 
@@ -132,6 +135,7 @@ def _lower_worker_priority():
     except (AttributeError, OSError):
         pass
 
+
 STATUS_PENDING = "pending"
 STATUS_PROCESSING = "processing"
 STATUS_READY = "ready"
@@ -140,8 +144,7 @@ STATUS_ERROR = "error"
 # Per-record state we never persist: the in-flight Future and the cached
 # JSON-ready payloads. Everything else is small metadata that's cheap to
 # round-trip through registry.json.
-_PAYLOAD_KEYS = ("map", "spatial_3d", "location",
-                 "variables", "dataset_info", "profiles")
+_PAYLOAD_KEYS = ("map", "spatial_3d", "location", "variables", "dataset_info", "profiles")
 _TRANSIENT_KEYS = {"_future", "_done_steps", *_PAYLOAD_KEYS}
 
 # Step identifiers used to skip work already completed before a crash.
@@ -158,8 +161,17 @@ STEP_CTD_BOTH = "ctd_both"
 # so "ready" never waits on it (the file is fully usable without it; a missing
 # prewarm just means the first click computes live, as before).
 STEP_PLOT_PREWARM = "plot_prewarm"
-ALL_STEPS = (STEP_PRELOAD, STEP_DERIVE, STEP_DATASET_INFO, STEP_PROFILES, STEP_SPATIAL,
-             STEP_3D, STEP_CTD_CLEAN, STEP_CTD_INTERP, STEP_CTD_BOTH)
+ALL_STEPS = (
+    STEP_PRELOAD,
+    STEP_DERIVE,
+    STEP_DATASET_INFO,
+    STEP_PROFILES,
+    STEP_SPATIAL,
+    STEP_3D,
+    STEP_CTD_CLEAN,
+    STEP_CTD_INTERP,
+    STEP_CTD_BOTH,
+)
 
 _lock = threading.RLock()
 _registry: dict[str, dict] = {}
@@ -168,6 +180,7 @@ _loaded = False
 
 
 # ---------- helpers ----------
+
 
 def _file_id(path: Path) -> str:
     return hashlib.sha256(str(path.resolve()).encode()).hexdigest()[:16]
@@ -236,10 +249,14 @@ def _load_payload_sidecar(rec: dict) -> set:
         return set()
     for k, v in (body.get("payloads") or {}).items():
         rec[k] = v
-    if body.get("last_time"): rec["last_time"] = body["last_time"]
-    if body.get("last_lat") is not None: rec["last_lat"] = body["last_lat"]
-    if body.get("last_lon") is not None: rec["last_lon"] = body["last_lon"]
-    if body.get("platform_kind") is not None: rec["platform_kind"] = body["platform_kind"]
+    if body.get("last_time"):
+        rec["last_time"] = body["last_time"]
+    if body.get("last_lat") is not None:
+        rec["last_lat"] = body["last_lat"]
+    if body.get("last_lon") is not None:
+        rec["last_lon"] = body["last_lon"]
+    if body.get("platform_kind") is not None:
+        rec["platform_kind"] = body["platform_kind"]
     return set(body.get("done_steps") or [])
 
 
@@ -252,10 +269,7 @@ def _drop_payload_sidecar(file_id: str):
 
 def _persist_locked():
     """Write the registry to disk. Must be called with `_lock` held."""
-    safe = {
-        rid: {k: v for k, v in rec.items() if k not in _TRANSIENT_KEYS}
-        for rid, rec in _registry.items()
-    }
+    safe = {rid: {k: v for k, v in rec.items() if k not in _TRANSIENT_KEYS} for rid, rec in _registry.items()}
     safe["_cache_version"] = CACHE_VERSION
     try:
         REGISTRY_FILE.write_text(json.dumps(safe, indent=2))
@@ -288,8 +302,13 @@ def _sweep_orphans():
     """
     known = _known_hashes()
     orphans = []
-    for d in (plot_logic._PRELOAD_CACHE_DIR, plot_logic._DERIVED_CACHE_DIR,
-              plot_logic._CTD_CACHE_DIR, PAYLOADS_DIR, PLOTCACHE_DIR):
+    for d in (
+        plot_logic._PRELOAD_CACHE_DIR,
+        plot_logic._DERIVED_CACHE_DIR,
+        plot_logic._CTD_CACHE_DIR,
+        PAYLOADS_DIR,
+        PLOTCACHE_DIR,
+    ):
         try:
             entries = list(d.iterdir())
         except OSError:
@@ -305,7 +324,7 @@ def _sweep_orphans():
     def _run():
         freed = 0
         for e, h in orphans:
-            if h in _known_hashes():   # registered while we were sweeping
+            if h in _known_hashes():  # registered while we were sweeping
                 continue
             try:
                 if e.is_dir():
@@ -316,8 +335,11 @@ def _sweep_orphans():
                     e.unlink(missing_ok=True)
             except OSError:
                 pass
-        logger.warning("Cache sweep: removed %d orphaned cache entries (%.1f GB) for files "
-                       "no longer registered", len(orphans), freed / 1e9)
+        logger.warning(
+            "Cache sweep: removed %d orphaned cache entries (%.1f GB) for files no longer registered",
+            len(orphans),
+            freed / 1e9,
+        )
 
     threading.Thread(target=_run, name="cache-sweep", daemon=True).start()
 
@@ -338,7 +360,7 @@ def _load_once():
         # including files registered by path, which a rescan could not recover).
         stale_version = data.get("_cache_version") != CACHE_VERSION
         if stale_version:
-            _wipe_plotcache()   # stale binary payloads keyed by the old version
+            _wipe_plotcache()  # stale binary payloads keyed by the old version
         for rid, rec in data.items():
             if rid == "_cache_version":
                 continue
@@ -399,6 +421,7 @@ def _is_nrt(last_time_iso: Optional[str]) -> bool:
         return False
     try:
         import pandas as pd
+
         ts = pd.Timestamp(last_time_iso)
         if ts.tzinfo is None:
             ts = ts.tz_localize("UTC")
@@ -408,15 +431,14 @@ def _is_nrt(last_time_iso: Optional[str]) -> bool:
         return False
 
 
-
 # ---------- platform kind (icon) ----------
 
 # NERC B76 platform-vocabulary codes seen in BODC OG1 files → icon kind.
 _B76_KIND = {
-    "B7600001": "slocum",     # Teledyne Webb Research Slocum G2 glider
-    "B7600029": "slocum",     # Teledyne Webb Research Slocum G3S glider
+    "B7600001": "slocum",  # Teledyne Webb Research Slocum G2 glider
+    "B7600029": "slocum",  # Teledyne Webb Research Slocum G3S glider
     "B7600002": "seaglider",  # Kongsberg Seaglider
-    "B7600021": "alr",        # NOC Autosub Long Range 1500
+    "B7600021": "alr",  # NOC Autosub Long Range 1500
 }
 PLATFORM_KINDS = ("slocum", "seaglider", "alr")
 
@@ -436,8 +458,9 @@ def _detect_platform_kind(path: str) -> str:
     for code, kind in _B76_KIND.items():
         if code in vocab:
             return kind
-    text = " ".join(attrs.get(k, "") for k in
-                    ("platform_type", "platform_model", "platform", "instrument", "id", "title", "source")).lower()
+    text = " ".join(
+        attrs.get(k, "") for k in ("platform_type", "platform_model", "platform", "instrument", "id", "title", "source")
+    ).lower()
     text += " " + Path(path).name.lower()
     if "slocum" in text:
         return "slocum"
@@ -462,6 +485,7 @@ def _public_view(rec: dict) -> dict:
     last_time = rec.get("last_time")
     try:
         from ..server import erddap_fetch
+
         is_managed = erddap_fetch.is_managed(rec.get("path", ""))
     except Exception:
         is_managed = False
@@ -493,11 +517,16 @@ def _set(rec: dict, **fields):
 
 def _reset(rec: dict, size: int, mtime: int):
     """Mark a record as needing reprocessing. `_lock` must be held."""
-    rec.update({
-        "size": size, "mtime": mtime,
-        "status": STATUS_PENDING, "progress": 0,
-        "stage": "queued", "error": "",
-    })
+    rec.update(
+        {
+            "size": size,
+            "mtime": mtime,
+            "status": STATUS_PENDING,
+            "progress": 0,
+            "stage": "queued",
+            "error": "",
+        }
+    )
     for k in _PAYLOAD_KEYS:
         rec.pop(k, None)
     rec["_done_steps"] = []
@@ -548,6 +577,7 @@ def _refresh(rec: dict):
 
 
 # ---------- public API ----------
+
 
 def _scan_data_dir():
     """Register any .nc files not yet in the registry.
@@ -635,15 +665,19 @@ def register_path(path: str) -> dict:
     _load_once()
     with _lock:
         rec = _registry.get(rid)
-        if rec and (rec.get("size"), rec.get("mtime")) == (size, mtime) \
-                and rec.get("status") == STATUS_READY:
+        if rec and (rec.get("size"), rec.get("mtime")) == (size, mtime) and rec.get("status") == STATUS_READY:
             return _public_view(rec)
         if not rec:
             rec = {
-                "id": rid, "name": p.name, "path": str(p),
-                "size": size, "mtime": mtime,
-                "status": STATUS_PENDING, "progress": 0,
-                "stage": "queued", "error": "",
+                "id": rid,
+                "name": p.name,
+                "path": str(p),
+                "size": size,
+                "mtime": mtime,
+                "status": STATUS_PENDING,
+                "progress": 0,
+                "stage": "queued",
+                "error": "",
             }
             _registry[rid] = rec
         else:
@@ -678,6 +712,7 @@ def remove_file(file_id: str, *, delete_upload: bool = True) -> bool:
         if not should_delete:
             try:
                 from ..server import erddap_fetch
+
                 if erddap_fetch.is_managed(path):
                     fname = Path(path).name
                     should_delete = True
@@ -730,6 +765,7 @@ def request_refresh(file_id: str) -> Optional[dict]:
 
 
 # ---------- worker ----------
+
 
 def _is_removed(rec: dict) -> bool:
     return rec.get("_removed", False)
@@ -853,7 +889,8 @@ def clear_plot_binary(file_id: str):
         _PLOTCACHE_MEM.clear()
         _PLOTCACHE_MEM_BYTES = 0
     # The overlay prefetch store lives in this dir too — drop its bookkeeping.
-    from ..maps import copernicus_prefetch   # lazy: it imports this module
+    from ..maps import copernicus_prefetch  # lazy: it imports this module
+
     copernicus_prefetch.forget(file_id)
 
 
@@ -939,12 +976,19 @@ def _prewarm_default_plots(rec: dict):
             return
         try:
             result = plot_logic.get_plot_data_json(
-                path, x_var, y_var, c_var,
+                path,
+                x_var,
+                y_var,
+                c_var,
                 qc_flags=qc_flags,
                 profile_num=None,
-                cycle_num=None, cycle_var=cycle_var, sci_phases=None, direction_filter=None,
+                cycle_num=None,
+                cycle_var=cycle_var,
+                sci_phases=None,
+                direction_filter=None,
                 highlight_profile=False,
-                max_points=max_points, binary=True,
+                max_points=max_points,
+                binary=True,
             )
         except Exception:
             continue
@@ -953,12 +997,22 @@ def _prewarm_default_plots(rec: dict):
         data = bytes(result)
         for cv in cycle_var_keys:
             params_str = plot_logic.plot_cache_params_str(
-                x_var=x_var, y_var=y_var, c_var=c_var, qc_flags=qc_flags,
+                x_var=x_var,
+                y_var=y_var,
+                c_var=c_var,
+                qc_flags=qc_flags,
                 profile_num=None,
-                cycle_num=None, cycle_var=cv, sci_phases="", direction_filter="",
+                cycle_num=None,
+                cycle_var=cv,
+                sci_phases="",
+                direction_filter="",
                 highlight_profile=False,
-                max_points=max_points, zoom_x_var=None, zoom_x_min=None, zoom_x_max=None,
-                zoom_y_min=None, zoom_y_max=None,
+                max_points=max_points,
+                zoom_x_var=None,
+                zoom_x_min=None,
+                zoom_x_max=None,
+                zoom_y_min=None,
+                zoom_y_max=None,
             )
             put_plot_binary(rec["id"], params_str, data)
         _release_memory()
@@ -988,9 +1042,13 @@ def _process(file_id: str):
         # 1. Preload variable arrays to disk (.npy). They survive a crash or
         # restart; we only redo it if the sidecar says the step never finished
         # or the preload dir has been wiped.
-        _set(rec, status=STATUS_PROCESSING, progress=15,
-             stage="loading variables" if not _is_done(STEP_PRELOAD) else "resuming",
-             error="")
+        _set(
+            rec,
+            status=STATUS_PROCESSING,
+            progress=15,
+            stage="loading variables" if not _is_done(STEP_PRELOAD) else "resuming",
+            error="",
+        )
         preload_on_disk = (plot_logic._preload_dir(p) / "_names.json").exists()
         if _is_done(STEP_PRELOAD) and preload_on_disk:
             with plot_logic._PRELOADED_LOCK:
@@ -1101,9 +1159,9 @@ def _process(file_id: str):
         if _is_removed(rec):
             return
         ctd_plan = [
-            (STEP_CTD_CLEAN,  False, True,  90, "pre-warming CTD: clean"),
-            (STEP_CTD_INTERP, True,  False, 93, "pre-warming CTD: interpolate"),
-            (STEP_CTD_BOTH,   True,  True,  96, "pre-warming CTD: interpolate + clean"),
+            (STEP_CTD_CLEAN, False, True, 90, "pre-warming CTD: clean"),
+            (STEP_CTD_INTERP, True, False, 93, "pre-warming CTD: interpolate"),
+            (STEP_CTD_BOTH, True, True, 96, "pre-warming CTD: interpolate + clean"),
         ]
 
         def _ctd_cb(stage_msg: str):
@@ -1128,8 +1186,7 @@ def _process(file_id: str):
 
         if _is_removed(rec):
             return
-        _set(rec, status=STATUS_READY, progress=100, stage="ready",
-             error="", processed_at=time.time())
+        _set(rec, status=STATUS_READY, progress=100, stage="ready", error="", processed_at=time.time())
         _save_payload_sidecar(rec)
         _release_memory()
 
@@ -1139,8 +1196,10 @@ def _process(file_id: str):
         if not _is_removed(rec):
             try:
                 from ..maps import copernicus_prefetch
+
                 copernicus_prefetch.ensure(file_id)
-                from . import bathy_prefetch      # lazy: it imports this module
+                from . import bathy_prefetch  # lazy: it imports this module
+
                 bathy_prefetch.ensure(file_id)
             except Exception:
                 traceback.print_exc()
@@ -1160,8 +1219,7 @@ def _process(file_id: str):
     except Exception as e:
         if not _is_removed(rec):
             traceback.print_exc()
-            _set(rec, status=STATUS_ERROR, error=f"{type(e).__name__}: {e}",
-                 progress=0, stage="error")
+            _set(rec, status=STATUS_ERROR, error=f"{type(e).__name__}: {e}", progress=0, stage="error")
     finally:
         with _lock:
             _persist_locked()

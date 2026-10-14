@@ -21,7 +21,6 @@ import os
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 from urllib.parse import urljoin
@@ -33,12 +32,12 @@ from ..core import cache_logic
 SERVER_FILES_URL = "https://linkedsystems.uk/erddap/files/"
 SERVER_INFO_URL = "https://linkedsystems.uk/erddap/info/"
 DAYS_ACTIVE = 7
-PRUNE_DAYS = 30               # a managed file not updated on the server for this long is deleted
+PRUNE_DAYS = 30  # a managed file not updated on the server for this long is deleted
 FILE_SUFFIX = "_R.nc"
-SCAN_INTERVAL = 900           # seconds between scans (each is ~80 folder listings on BODC)
-SCAN_RETRY = 120              # seconds before retrying a scan BODC didn't answer
+SCAN_INTERVAL = 900  # seconds between scans (each is ~80 folder listings on BODC)
+SCAN_RETRY = 120  # seconds before retrying a scan BODC didn't answer
 HTTP_TIMEOUT = 15
-LISTING_TIMEOUT = 6           # seconds per directory-listing attempt
+LISTING_TIMEOUT = 6  # seconds per directory-listing attempt
 LISTING_ATTEMPTS = 3
 
 MARKER_FILE = cache_logic.DATA_DIR / ".glider_playground_managed.json"
@@ -50,7 +49,7 @@ log = logging.getLogger(__name__)
 
 _lock = threading.RLock()
 _scan_cache: dict = {"at": 0.0, "data": None, "scanning": True, "error": False}
-_wake = threading.Event()     # set by the Refresh button to scan now
+_wake = threading.Event()  # set by the Refresh button to scan now
 _in_flight: set[str] = set()  # filenames currently downloading
 # filename -> {"error", "server_mtime", "gone"} for its last failed download (shown on its card until retried).
 # "gone" (a 404) skips auto-download until the server lists a newer copy.
@@ -60,6 +59,7 @@ _executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="live-dl")
 
 
 # ---------- managed-file marker ----------
+
 
 def _load_marker() -> dict:
     """Map filename → {"server_mtime": float, "downloaded_at": float}."""
@@ -80,6 +80,7 @@ def _save_marker(data: dict):
 
 
 # ---------- suppressed (binned) list ----------
+
 
 def _load_suppressed() -> set:
     """Filenames the user removed and that must not be auto-downloaded again."""
@@ -136,6 +137,7 @@ def is_managed(path: str | Path) -> bool:
 
 # ---------- ERDDAP scan ----------
 
+
 def _erddap_listing(base_url: str) -> Optional[list]:
     """Directory rows, or None when the request failed (distinct from empty)."""
     json_url = base_url.rstrip("/") + "/.json"
@@ -162,9 +164,9 @@ def _scan_active(previous: Optional[list] = None) -> Optional[list[dict]]:
     if root is None:
         return None
     folders = [
-        item["name"] for item in root
-        if item["name"].endswith("/")
-        and (item["last_modified"] >= cutoff or item["name"].strip("/").endswith("_R"))
+        item["name"]
+        for item in root
+        if item["name"].endswith("/") and (item["last_modified"] >= cutoff or item["name"].strip("/").endswith("_R"))
     ]
     with ThreadPoolExecutor(max_workers=4, thread_name_prefix="live-scan") as pool:
         listings = list(pool.map(lambda n: _erddap_listing(urljoin(SERVER_FILES_URL, n)), folders))
@@ -173,24 +175,26 @@ def _scan_active(previous: Optional[list] = None) -> Optional[list[dict]]:
     for name, files in zip(folders, listings):
         ds = name.strip("/")
         if files is None:
-            out.extend(e for e in (previous or [])
-                       if e["dataset"] == ds and e["server_mtime"] >= cutoff)
+            out.extend(e for e in (previous or []) if e["dataset"] == ds and e["server_mtime"] >= cutoff)
             continue
         for f in files:
             if not f["name"].endswith(FILE_SUFFIX) or f["last_modified"] < cutoff:
                 continue
-            out.append({
-                "dataset": ds,
-                "filename": f["name"],
-                "url": urljoin(SERVER_FILES_URL, name) + f["name"],
-                "server_mtime": f["last_modified"],
-                "size": f["size"],
-            })
+            out.append(
+                {
+                    "dataset": ds,
+                    "filename": f["name"],
+                    "url": urljoin(SERVER_FILES_URL, name) + f["name"],
+                    "server_mtime": f["last_modified"],
+                    "size": f["size"],
+                }
+            )
     out.sort(key=lambda x: x["server_mtime"], reverse=True)
     return out
 
 
 # ---------- download / update ----------
+
 
 def _download_to_data_dir(url: str, filename: str, server_mtime: float) -> Path:
     target = cache_logic.DATA_DIR / filename
@@ -232,7 +236,14 @@ def _remove_managed_file(filename: str):
             _save_marker(marker)
 
 
-DATASET_FIELDS = ("title", "Conventions", "processing_level", "time_coverage_start", "time_coverage_end", "date_modified")
+DATASET_FIELDS = (
+    "title",
+    "Conventions",
+    "processing_level",
+    "time_coverage_start",
+    "time_coverage_end",
+    "date_modified",
+)
 
 
 def _dataset_info(dataset: str) -> dict:
@@ -272,8 +283,7 @@ def _download_and_register(entry: dict):
             log.warning("Live download failed for %s: %s", fname, e)
         details = _failure_details(entry, e)
         with _lock:
-            _failed[fname] = {"error": str(e), "server_mtime": entry["server_mtime"], "gone": gone,
-                              "details": details}
+            _failed[fname] = {"error": str(e), "server_mtime": entry["server_mtime"], "gone": gone, "details": details}
     finally:
         with _lock:
             _in_flight.discard(fname)
@@ -297,12 +307,13 @@ def request_download(filename: str) -> dict:
     entry = next((e for e in listing if e["filename"] == filename), None)
     if entry is None:
         return {"status": "error", "message": "File not found in active listing"}
-    _remove_suppressed(filename)   # an explicit download un-bins the glider
+    _remove_suppressed(filename)  # an explicit download un-bins the glider
     started = _enqueue_download(entry)
     return {"status": "queued" if started else "in_flight", "filename": filename}
 
 
 # ---------- background scanner ----------
+
 
 def _scan_once():
     with _lock:
@@ -364,25 +375,26 @@ def _sync_managed_files(listing: list[dict]):
     for entry in listing:
         fname = entry["filename"]
         if fname in suppressed:
-            continue                       # user removed this one — leave it
+            continue  # user removed this one — leave it
         failed = failed_now.get(fname)
         if failed and failed["gone"] and failed["server_mtime"] == entry["server_mtime"]:
-            continue                       # listed but not served (404) — wait for a newer copy
+            continue  # listed but not served (404) — wait for a newer copy
         info = marker.get(fname)
         if info is None:
-            _enqueue_download(entry)        # new active glider → download it
+            _enqueue_download(entry)  # new active glider → download it
         elif entry["server_mtime"] > float(info.get("server_mtime", 0)) + 1:
-            _enqueue_download(entry)        # have it, but server has a newer copy
+            _enqueue_download(entry)  # have it, but server has a newer copy
 
     cutoff = now - PRUNE_DAYS * 86400
     for fname, info in marker.items():
         if fname in _in_flight:
             continue
         if float(info.get("server_mtime", 0)) < cutoff:
-            _remove_managed_file(fname)     # not updated for PRUNE_DAYS
+            _remove_managed_file(fname)  # not updated for PRUNE_DAYS
 
 
 # ---------- public API ----------
+
 
 def list_live(force_scan: bool = False) -> dict:
     """Combined live feed: the last scan's active gliders + uploaded files. Never waits on ERDDAP."""
@@ -406,46 +418,50 @@ def list_live(force_scan: bool = False) -> dict:
         local_mtime = float(marker.get(fname, {}).get("server_mtime", 0)) if downloaded else 0.0
         rid = cache_logic._file_id(target) if downloaded else None
         rec = cache_logic.get_record(rid) if rid else None
-        active.append({
-            "kind": "live",
-            "dataset": e["dataset"],
-            "filename": fname,
-            "server_mtime": e["server_mtime"],
-            "downloaded": downloaded,
-            "managed": downloaded,
-            "needs_update": downloaded and e["server_mtime"] > local_mtime + 1,
-            "downloading": fname in in_flight,
-            "download_error": (failed.get(fname) or {}).get("error"),
-            "download_details": (failed.get(fname) or {}).get("details"),
-            "suppressed": fname in suppressed,
-            "file_id": rid if rec else None,
-            "status": (rec or {}).get("status") if rec else None,
-            "progress": (rec or {}).get("progress") if rec else None,
-        })
+        active.append(
+            {
+                "kind": "live",
+                "dataset": e["dataset"],
+                "filename": fname,
+                "server_mtime": e["server_mtime"],
+                "downloaded": downloaded,
+                "managed": downloaded,
+                "needs_update": downloaded and e["server_mtime"] > local_mtime + 1,
+                "downloading": fname in in_flight,
+                "download_error": (failed.get(fname) or {}).get("error"),
+                "download_details": (failed.get(fname) or {}).get("details"),
+                "suppressed": fname in suppressed,
+                "file_id": rid if rec else None,
+                "status": (rec or {}).get("status") if rec else None,
+                "progress": (rec or {}).get("progress") if rec else None,
+            }
+        )
 
     # "Your files": everything registered locally that we did NOT auto-download
     # — uploads plus any .nc the user dropped in data/ themselves.
     managed_paths = {str((cache_logic.DATA_DIR / fn).resolve()) for fn in marker.keys()}
     uploads = []
-    for rec in (cache_logic.list_files() or []):
+    for rec in cache_logic.list_files() or []:
         try:
             rec_path = str(Path(rec.get("path", "")).resolve())
         except Exception:
             rec_path = rec.get("path", "")
         if rec_path in managed_paths:
             continue
-        uploads.append({
-            "kind": "upload" if rec.get("uploaded") else "local",
-            "file_id": rec["id"],
-            "name": rec["name"],
-            "path": rec["path"],
-            "size": rec.get("size", 0),
-            "status": rec.get("status"),
-            "progress": rec.get("progress"),
-            "is_nrt": rec.get("is_nrt", False),
-            "last_time": rec.get("last_time"),
-            "uploaded": rec.get("uploaded", False),
-        })
+        uploads.append(
+            {
+                "kind": "upload" if rec.get("uploaded") else "local",
+                "file_id": rec["id"],
+                "name": rec["name"],
+                "path": rec["path"],
+                "size": rec.get("size", 0),
+                "status": rec.get("status"),
+                "progress": rec.get("progress"),
+                "is_nrt": rec.get("is_nrt", False),
+                "last_time": rec.get("last_time"),
+                "uploaded": rec.get("uploaded", False),
+            }
+        )
 
     return {
         "scanned_at": _scan_cache.get("at", 0),

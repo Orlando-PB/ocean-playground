@@ -55,19 +55,20 @@ PROFILES_NPZ_STEM = ARGO_DIR / "profiles"
 _PROFILE_ARRAYS = ("lat", "lon", "date", "wmo")
 DETAIL_URL = "https://fleetmonitoring.euro-argo.eu/floats/{wmo}"
 
-INDEX_TTL = 24 * 3600        # re-download the global index at most daily
-DETAIL_TTL = 3600            # per-float detail cache
+INDEX_TTL = 24 * 3600  # re-download the global index at most daily
+DETAIL_TTL = 3600  # per-float detail cache
 HTTP_TIMEOUT = 30
-INDEX_TIMEOUT = 600          # the index is ~60 MB; slow on a Pi
+INDEX_TIMEOUT = 600  # the index is ~60 MB; slow on a Pi
 
 _lock = threading.Lock()
-_floats: Optional[dict] = None       # {"built": epoch, "floats": [...]}
+_floats: Optional[dict] = None  # {"built": epoch, "floats": [...]}
 _building = False
 _build_error: Optional[str] = None
 _detail_cache: dict[str, tuple[float, dict]] = {}
 
 
 # ---------- global index → one record per float ----------
+
 
 def _parse_index(path: Path) -> list[dict]:
     """Reduce the profile index to one record per float.
@@ -93,9 +94,15 @@ def _parse_index(path: Path) -> list[dict]:
             rec = floats.get(wmo)
             if rec is None:
                 rec = floats[wmo] = {
-                    "wmo": wmo, "dac": dac, "inst": p[6] if len(p) > 6 else "",
+                    "wmo": wmo,
+                    "dac": dac,
+                    "inst": p[6] if len(p) > 6 else "",
                     "ocean": p[4] if len(p) > 4 else "",
-                    "first": date, "last": "", "lat": None, "lon": None, "n": 0,
+                    "first": date,
+                    "last": "",
+                    "lat": None,
+                    "lon": None,
+                    "n": 0,
                 }
             rec["n"] += 1
             if date and date < rec["first"]:
@@ -118,8 +125,10 @@ def _parse_index(path: Path) -> list[dict]:
                 if -90 <= lat <= 90 and -180 <= lon <= 360 and wmo.isdigit():
                     if lon > 180:
                         lon -= 360
-                    p_lat.append(lat); p_lon.append(lon)
-                    p_date.append(int(date.ljust(14, "0")[:14])); p_wmo.append(int(wmo))
+                    p_lat.append(lat)
+                    p_lon.append(lon)
+                    p_date.append(int(date.ljust(14, "0")[:14]))
+                    p_wmo.append(int(wmo))
     _write_profiles(p_lat, p_lon, p_date, p_wmo)
     out = [r for r in floats.values() if r["lat"] is not None and r["last"]]
     out.sort(key=lambda r: r["last"], reverse=True)
@@ -130,8 +139,12 @@ def _write_profiles(p_lat, p_lon, p_date, p_wmo):
     """Persist the per-profile arrays as separate .npy files (mmap-able)."""
     try:
         ARGO_DIR.mkdir(parents=True, exist_ok=True)
-        for name, arr, dt in (("lat", p_lat, np.float32), ("lon", p_lon, np.float32),
-                              ("date", p_date, np.int64), ("wmo", p_wmo, np.int32)):
+        for name, arr, dt in (
+            ("lat", p_lat, np.float32),
+            ("lon", p_lon, np.float32),
+            ("date", p_date, np.int64),
+            ("wmo", p_wmo, np.int32),
+        ):
             f = Path(f"{PROFILES_NPZ_STEM}_{name}.npy")
             tmp = f.with_suffix(".tmp.npy")
             np.save(str(tmp), np.frombuffer(arr, dtype=arr.typecode).astype(dt, copy=False))
@@ -153,8 +166,7 @@ def _date_int(ms: float) -> int:
     return int(d.strftime("%Y%m%d%H%M%S"))
 
 
-def profiles_in(min_lat: float, max_lat: float, min_lon: float, max_lon: float,
-                t0_ms: float, t1_ms: float) -> dict:
+def profiles_in(min_lat: float, max_lat: float, min_lon: float, max_lon: float, t0_ms: float, t1_ms: float) -> dict:
     """Positioned Argo profiles inside the box whose date lies in [t0, t1].
 
     Returns ``{"status": "ready"|"building"|"error", "count": n,
@@ -167,8 +179,15 @@ def profiles_in(min_lat: float, max_lat: float, min_lon: float, max_lon: float,
         with _lock:
             err = _build_error if not _building else None
         return {"status": "error" if err else "building", "error": err, "count": 0, "profiles": []}
-    key = (round(min_lat, 3), round(max_lat, 3), round(min_lon, 3), round(max_lon, 3),
-           int(t0_ms // 3600000), int(t1_ms // 3600000), files["lat"].stat().st_mtime_ns)
+    key = (
+        round(min_lat, 3),
+        round(max_lat, 3),
+        round(min_lon, 3),
+        round(max_lon, 3),
+        int(t0_ms // 3600000),
+        int(t1_ms // 3600000),
+        files["lat"].stat().st_mtime_ns,
+    )
     with _lock:
         hit = _profiles_cache.get(key)
     if hit is not None:
@@ -277,15 +296,14 @@ def list_floats(days: Optional[float] = None) -> dict:
         building = _building
         err = _build_error
     if data is None:
-        return {"status": "error" if err and not building else "building",
-                "error": err, "count": 0, "floats": []}
+        return {"status": "error" if err and not building else "building", "error": err, "count": 0, "floats": []}
     cutoff = ""
     if days:
         cutoff = datetime.fromtimestamp(time.time() - days * 86400, tz=timezone.utc).strftime("%Y%m%d%H%M%S")
     rows = []
     for r in data["floats"]:
         if cutoff and r["last"] < cutoff:
-            break   # sorted newest-first
+            break  # sorted newest-first
         rows.append([r["wmo"], r["lat"], r["lon"], _iso(r["last"]), r["n"], _iso(r["first"]), r["dac"]])
     return {
         "status": "ready",
@@ -306,6 +324,7 @@ def _iso(d: str) -> str:
 
 # ---------- per-float detail (Euro-Argo fleet monitoring) ----------
 
+
 def _measure(m: Optional[dict]) -> Optional[dict]:
     if not m:
         return None
@@ -321,8 +340,7 @@ def float_detail(wmo: str) -> dict:
     if hit and now - hit[0] < DETAIL_TTL:
         return hit[1]
     try:
-        r = requests.get(DETAIL_URL.format(wmo=wmo), timeout=HTTP_TIMEOUT,
-                         headers={"Accept": "application/json"})
+        r = requests.get(DETAIL_URL.format(wmo=wmo), timeout=HTTP_TIMEOUT, headers={"Accept": "application/json"})
         r.raise_for_status()
         d = r.json()
     except ValueError:
@@ -339,12 +357,16 @@ def float_detail(wmo: str) -> dict:
         try:
             if L.get("lat") is None or L.get("lon") is None:
                 continue
-            locs.append([round(float(L["lat"]), 4), round(float(L["lon"]), 4), (L.get("date") or "")[:19], L.get("cycleNumber")])
+            locs.append(
+                [round(float(L["lat"]), 4), round(float(L["lon"]), 4), (L.get("date") or "")[:19], L.get("cycleNumber")]
+            )
         except (TypeError, ValueError):
             continue
     out = {
         "wmo": wmo,
-        "status": {"A": "Active", "I": "Inactive", "C": "Closed", "D": "Dead"}.get(d.get("statusCode"), d.get("statusCode")),
+        "status": {"A": "Active", "I": "Inactive", "C": "Closed", "D": "Dead"}.get(
+            d.get("statusCode"), d.get("statusCode")
+        ),
         "maker": d.get("maker"),
         "platform_type": plat.get("type"),
         "model": d.get("model"),
@@ -357,14 +379,17 @@ def float_detail(wmo: str) -> dict:
         "grey_list": d.get("greyListParameters") or [],
         "deployment": {
             "date": (dep.get("launchDate") or "")[:19],
-            "lat": dep.get("lat"), "lon": dep.get("lon"),
-            "ship": dep.get("platform"), "cruise": dep.get("cruiseName"),
+            "lat": dep.get("lat"),
+            "lon": dep.get("lon"),
+            "ship": dep.get("platform"),
+            "cruise": dep.get("cruiseName"),
             "pi": dep.get("principalInvestigatorName"),
         },
         "last_cycle": {
             "cycle": last.get("numCycle"),
             "date": (last.get("date") or "")[:19],
-            "lat": last.get("lat"), "lon": last.get("lon"),
+            "lat": last.get("lat"),
+            "lon": last.get("lon"),
             "surface": _measure(last.get("surfaceMeasure")),
             "bottom": _measure(last.get("bottomMeasure")),
         },

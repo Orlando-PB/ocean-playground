@@ -2,6 +2,7 @@
 the app's name, plot presets, dashboard views and colour palettes. The backend uses it for the
 default-plot prewarm (cache_logic); pages get it as a blocking script from
 /api/plot_presets.js so it's available synchronously at first paint."""
+
 import json
 from pathlib import Path
 
@@ -53,5 +54,11 @@ def site_url() -> str:
 
 
 def as_script() -> str:
-    return ("window.GP_PLOT_PRESETS = " + json.dumps(load(), separators=(",", ":")) + ";"
-            + "window.GP_APP_NAME = " + json.dumps(app_name()) + ";")
+    return (
+        "window.GP_PLOT_PRESETS = "
+        + json.dumps(load(), separators=(",", ":"))
+        + ";"
+        + "window.GP_APP_NAME = "
+        + json.dumps(app_name())
+        + ";"
+    )

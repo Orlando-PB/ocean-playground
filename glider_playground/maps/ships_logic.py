@@ -44,31 +44,43 @@ BAS_URLS = (
     "https://www.nerc-bas.ac.uk/icd/data/ship-pos/sda.pos",
     "http://www.nerc-bas.ac.uk/icd/data/ship-pos/sda.pos",
 )
-TTL = 30 * 60           # NOC reports are daily, BAS hourly — 30 min is plenty
+TTL = 30 * 60  # NOC reports are daily, BAS hourly — 30 min is plenty
 HTTP_TIMEOUT = 20
-MAX_AGE_DAYS = 14       # ignore BAS rows older than this (file spans ~6 weeks)
+MAX_AGE_DAYS = 14  # ignore BAS rows older than this (file spans ~6 weeks)
 
 _lock = threading.Lock()
-_cache: Optional[dict] = None      # {"built": epoch, "ships": [...]}
+_cache: Optional[dict] = None  # {"built": epoch, "ships": [...]}
 _refreshing = False
 
 # Static identity for the marker/card; positions come from the feeds.
 # ``icon`` names ``static/icons/<icon>-mapicon.png`` (vendored MARS icons).
 SHIPS = {
     "discovery": {
-        "name": "RRS Discovery", "operator": "NOC / NERC", "source": "NOC daily position report",
+        "name": "RRS Discovery",
+        "operator": "NOC / NERC",
+        "source": "NOC daily position report",
         "link": "https://www.noc.ac.uk/our-work/ships-and-expeditions",
-        "mmsi": "235091165", "imo": "9588029", "icon": "rrs-discovery",
+        "mmsi": "235091165",
+        "imo": "9588029",
+        "icon": "rrs-discovery",
     },
     "james_cook": {
-        "name": "RRS James Cook", "operator": "NOC / NERC", "source": "NOC daily position report",
+        "name": "RRS James Cook",
+        "operator": "NOC / NERC",
+        "source": "NOC daily position report",
         "link": "https://www.noc.ac.uk/our-work/ships-and-expeditions",
-        "mmsi": "235010700", "imo": "9338242", "icon": "rrs-james-cook",
+        "mmsi": "235010700",
+        "imo": "9338242",
+        "icon": "rrs-james-cook",
     },
     "sda": {
-        "name": "RRS Sir David Attenborough", "operator": "BAS", "source": "BAS met-report position (hourly)",
+        "name": "RRS Sir David Attenborough",
+        "operator": "BAS",
+        "source": "BAS met-report position (hourly)",
         "link": "https://legacy.bas.ac.uk/met/services/ship-pos.html",
-        "mmsi": "740405000", "imo": "9798222", "icon": "ship",
+        "mmsi": "740405000",
+        "imo": "9798222",
+        "icon": "ship",
     },
 }
 _NOC_NAME_TO_ID = {"rrs discovery": "discovery", "rrs james cook": "james_cook"}
@@ -106,6 +118,7 @@ def _clean(s) -> str:
 
 # ---------- NOC ----------
 
+
 def _fetch_noc() -> list[dict]:
     r = requests.get(NOC_URL, timeout=HTTP_TIMEOUT, headers={"User-Agent": "glider-playground"})
     r.raise_for_status()
@@ -122,7 +135,7 @@ def _fetch_noc() -> list[dict]:
         for f in coll.get("features") or []:
             geom = f.get("geometry") or {}
             if geom.get("type") != "Point":
-                continue   # the LineString is just the same points joined up
+                continue  # the LineString is just the same points joined up
             try:
                 lon, lat = float(geom["coordinates"][0]), float(geom["coordinates"][1])
             except (TypeError, ValueError, IndexError, KeyError):
@@ -131,27 +144,42 @@ def _fetch_noc() -> list[dict]:
                 continue
             p = f.get("properties") or {}
             t = _parse_dtg(p.get("dtg"), p.get("zone")) or _clean(p.get("created"))[:19].replace(" ", "T") + "Z"
-            fixes.append({
-                "lat": round(lat, 4), "lon": round(lon, 4), "time": t,
-                "expedition": _clean(p.get("expedition")), "status": _clean(p.get("status")),
-                "intentions": _clean(p.get("intentions")), "wx": _clean(p.get("wx")),
-                "speed": _clean(p.get("speed")),
-            })
+            fixes.append(
+                {
+                    "lat": round(lat, 4),
+                    "lon": round(lon, 4),
+                    "time": t,
+                    "expedition": _clean(p.get("expedition")),
+                    "status": _clean(p.get("status")),
+                    "intentions": _clean(p.get("intentions")),
+                    "wx": _clean(p.get("wx")),
+                    "speed": _clean(p.get("speed")),
+                }
+            )
         if not fixes:
             continue
         fixes.sort(key=lambda x: x["time"])
         last = fixes[-1]
-        out.append({
-            **SHIPS[sid], "id": sid,
-            "lat": last["lat"], "lon": last["lon"], "time": last["time"],
-            "expedition": last["expedition"], "status": last["status"],
-            "intentions": last["intentions"], "wx": last["wx"], "speed": last["speed"],
-            "precision": "bridge report, ~2 dp (a few km)",
-        })
+        out.append(
+            {
+                **SHIPS[sid],
+                "id": sid,
+                "lat": last["lat"],
+                "lon": last["lon"],
+                "time": last["time"],
+                "expedition": last["expedition"],
+                "status": last["status"],
+                "intentions": last["intentions"],
+                "wx": last["wx"],
+                "speed": last["speed"],
+                "precision": "bridge report, ~2 dp (a few km)",
+            }
+        )
     return out
 
 
 # ---------- BAS ----------
+
 
 def _fetch_bas() -> list[dict]:
     text = None
@@ -184,15 +212,25 @@ def _fetch_bas() -> list[dict]:
             last = (t, lat, lon)
     if last is None:
         raise RuntimeError("BAS position file had no recent rows")
-    return [{
-        **SHIPS["sda"], "id": "sda",
-        "lat": last[1], "lon": last[2], "time": last[0].strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "expedition": "", "status": "", "intentions": "", "wx": "", "speed": "",
-        "precision": "met report, 0.1° (~5–11 km)",
-    }]
+    return [
+        {
+            **SHIPS["sda"],
+            "id": "sda",
+            "lat": last[1],
+            "lon": last[2],
+            "time": last[0].strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "expedition": "",
+            "status": "",
+            "intentions": "",
+            "wx": "",
+            "speed": "",
+            "precision": "met report, 0.1° (~5–11 km)",
+        }
+    ]
 
 
 # ---------- cache ----------
+
 
 def _refresh() -> dict:
     ships: list[dict] = []
@@ -213,7 +251,7 @@ def _refresh_worker():
         with _lock:
             if data["ships"] or _cache is None:
                 _cache = data
-            else:   # total failure: keep the old positions, surface the errors
+            else:  # total failure: keep the old positions, surface the errors
                 _cache = {**_cache, "built": time.time(), "errors": data["errors"]}
     finally:
         with _lock:
@@ -233,7 +271,7 @@ def list_ships() -> dict:
         if stale and not _refreshing:
             _refreshing = True
             if data is None:
-                pass   # fetch synchronously below
+                pass  # fetch synchronously below
             else:
                 threading.Thread(target=_refresh_worker, name="ships-refresh", daemon=True).start()
     if data is None:

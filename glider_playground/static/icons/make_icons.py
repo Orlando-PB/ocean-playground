@@ -6,6 +6,7 @@ Each model is projected orthographically (side-on, slightly from above, nose eas
 hidden surfaces are removed triangle by triangle, and what's left is merged into one
 flat path per colour so the files stay ~1-3 kB.
 """
+
 import json
 import math
 from pathlib import Path
@@ -27,13 +28,13 @@ ICONS = {
     "argo": ("argo", 12),
 }
 OUTLINE = "#1b2229"
-OUTLINE_W = 0.7                  # viewBox units
-MUTE = 0.18                      # blend each model colour this far towards its own grey
-HEIGHT = 48                      # viewBox units for the tallest extent (before padding)
+OUTLINE_W = 0.7  # viewBox units
+MUTE = 0.18  # blend each model colour this far towards its own grey
+HEIGHT = 48  # viewBox units for the tallest extent (before padding)
 
 
 def _flat(hex_col):
-    rgb = [int(hex_col[i:i + 2], 16) for i in (1, 3, 5)]
+    rgb = [int(hex_col[i : i + 2], 16) for i in (1, 3, 5)]
     grey = sum(rgb) / 3
     return "#%02x%02x%02x" % tuple(round(c + (grey - c) * MUTE) for c in rgb)
 
@@ -54,8 +55,8 @@ def _path(geom, scale, x0, y1):
 def build(model, elev):
     parts = json.loads((MODELS / f"{model}.json").read_text())
     e = math.radians(elev)
-    up = (0.0, math.sin(e), math.cos(e))        # screen-up in model space
-    into = (0.0, math.cos(e), -math.sin(e))     # camera looks along this
+    up = (0.0, math.sin(e), math.cos(e))  # screen-up in model space
+    into = (0.0, math.cos(e), -math.sin(e))  # camera looks along this
 
     tris = []
     for part in parts.values():
@@ -81,13 +82,15 @@ def build(model, elev):
     scale = HEIGHT / max(y1 - y0, (x1 - x0) * 24 / 56)
     pad = 1.5
     w, h = (x1 - x0) * scale + 2 * pad, (y1 - y0) * scale + 2 * pad
-    grow = 0.02 / scale                                        # close hairline seams between colours
+    grow = 0.02 / scale  # close hairline seams between colours
     body = "".join(
-        f'<path fill="{col}" d="{_path(unary_union(ps).buffer(grow), scale, x0, y1)}"/>'
-        for col, ps in by_col.items())
+        f'<path fill="{col}" d="{_path(unary_union(ps).buffer(grow), scale, x0, y1)}"/>' for col, ps in by_col.items()
+    )
     outline = _path(covered.buffer(OUTLINE_W / scale), scale, x0, y1)
-    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{-pad:g} {-pad:g} {w:.1f} {h:.1f}">'
-            f'<path fill="{OUTLINE}" d="{outline}"/>{body}</svg>')
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{-pad:g} {-pad:g} {w:.1f} {h:.1f}">'
+        f'<path fill="{OUTLINE}" d="{outline}"/>{body}</svg>'
+    )
 
 
 if __name__ == "__main__":

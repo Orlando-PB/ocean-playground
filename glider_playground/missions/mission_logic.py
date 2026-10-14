@@ -5,6 +5,7 @@ A mission is one JSON file (schema: README.md, example: examples/biocarbon.json)
 filename, so a mission is "ready" once those files are in the app. Bundles (.zip = mission.json + data/*.nc)
 move a whole mission between machines; see bundle.py.
 """
+
 import hashlib
 import json
 import logging
@@ -24,12 +25,12 @@ logger = logging.getLogger(__name__)
 
 EXAMPLES_DIR = Path(__file__).parent / "examples"
 MISSIONS_DIR = Path(cache_logic.CACHE_ROOT) / "missions"
-DATA_DIR = MISSIONS_DIR / "data"          # .nc files unpacked from bundles
+DATA_DIR = MISSIONS_DIR / "data"  # .nc files unpacked from bundles
 SCENE_DIR = MISSIONS_DIR / "scene_cache"
-INBOX_DIR = MISSIONS_DIR / "inbox"        # drop a bundle .zip here and it is imported on the next listing
+INBOX_DIR = MISSIONS_DIR / "inbox"  # drop a bundle .zip here and it is imported on the next listing
 
 TRACK_MAX_POINTS = 8000
-BATHY_GRID = 200                          # seabed grid points along the longer side
+BATHY_GRID = 200  # seabed grid points along the longer side
 FLOAT_INDEX_PAD_DAYS = 2
 
 
@@ -51,7 +52,7 @@ def _ms(date: str) -> float:
 def _mission_files() -> dict:
     out = {}
     # user missions override bundled examples with the same id; a server lists only what was put in its missions folder
-    for folder in ((MISSIONS_DIR,) if server_config.IS_SERVER else (EXAMPLES_DIR, MISSIONS_DIR)):
+    for folder in (MISSIONS_DIR,) if server_config.IS_SERVER else (EXAMPLES_DIR, MISSIONS_DIR):
         if folder.is_dir():
             for f in sorted(folder.glob("*.json")):
                 out[_slug(f.stem)] = f
@@ -120,18 +121,21 @@ def resolved(m: dict) -> dict:
     out["platforms"] = []
     for p in m.get("platforms", []):
         rec = _resolve(p, index)
-        out["platforms"].append({
-            **p,
-            "file_id": rec["id"] if rec else None,
-            "status": rec["status"] if rec else "missing",
-            "progress": rec.get("progress", 0) if rec else 0,
-            "kind": p.get("model") or (rec or {}).get("platform_kind") or "slocum",
-        })
+        out["platforms"].append(
+            {
+                **p,
+                "file_id": rec["id"] if rec else None,
+                "status": rec["status"] if rec else "missing",
+                "progress": rec.get("progress", 0) if rec else 0,
+                "kind": p.get("model") or (rec or {}).get("platform_kind") or "slocum",
+            }
+        )
     return out
 
 
 def list_missions() -> list[dict]:
     from . import bundle
+
     bundle.import_inbox()
     index = _file_index()
     out = []
@@ -140,7 +144,7 @@ def list_missions() -> list[dict]:
         try:
             m = load(mid)
             if m is None:
-                continue    # a live mission none of whose platforms are loaded
+                continue  # a live mission none of whose platforms are loaded
             end = (m.get("time") or {}).get("end")
             ends[mid] = _ms(end) if end else 0.0
         except Exception as e:  # noqa: BLE001
@@ -148,13 +152,22 @@ def list_missions() -> list[dict]:
             continue
         plats = m.get("platforms", [])
         have = sum(1 for p in plats if _resolve(p, index))
-        out.append({"id": mid, "title": " ".join(str(m.get("title", mid)).split()), "summary": m.get("summary", ""),
-                    "platforms": len(plats), "platforms_available": have, "live": bool(m.get("live"))})
-    out.sort(key=lambda entry: ends[entry["id"]], reverse=True)      # most recent first
+        out.append(
+            {
+                "id": mid,
+                "title": " ".join(str(m.get("title", mid)).split()),
+                "summary": m.get("summary", ""),
+                "platforms": len(plats),
+                "platforms_available": have,
+                "live": bool(m.get("live")),
+            }
+        )
+    out.sort(key=lambda entry: ends[entry["id"]], reverse=True)  # most recent first
     return out
 
 
 # ---------- tracks ----------
+
 
 def track(m: dict, key: str, colour: str | None = None) -> dict:
     p = next((q for q in m.get("platforms", []) if q.get("key") == key), None)
@@ -188,8 +201,15 @@ def track(m: dict, key: str, colour: str | None = None) -> dict:
         a = np.asarray([np.nan if x is None else x for x in v], dtype=float)[idx]
         return [None if not np.isfinite(x) else round(float(x), nd) for x in a]
 
-    out = {"status": "ready", "file_id": rec["id"], "lon": col("lon", 5), "lat": col("lat", 5), "z": col("elevation", 1),
-           "time_ms": [float(x) for x in t[idx]], "pitch": col("pitch", 1)}
+    out = {
+        "status": "ready",
+        "file_id": rec["id"],
+        "lon": col("lon", 5),
+        "lat": col("lat", 5),
+        "z": col("elevation", 1),
+        "time_ms": [float(x) for x in t[idx]],
+        "pitch": col("pitch", 1),
+    }
     if colour:
         c = spatial_logic.track_colour(rec["path"], colour)
         vals = c.get("values")
@@ -209,14 +229,17 @@ def _colour_presets(m: dict) -> dict:
         if not rec or rec.get("status") != cache_logic.STATUS_READY:
             continue
         for o in spatial_logic.track_colour_options(rec["path"]):
-            if str(o.get("cmap", "")).startswith("discrete"):     # shared continuous scale only
+            if str(o.get("cmap", "")).startswith("discrete"):  # shared continuous scale only
                 continue
             seen.setdefault(o["key"], []).append(o)
-    base = lambda o: o["var"].replace("_ADJUSTED", "")
+
+    def base(o):
+        return o["var"].replace("_ADJUSTED", "")
+
     out = {}
     for k, opts in seen.items():
         names = [base(o) for o in opts]
-        win = max(names, key=names.count)          # ties: the first platform listed
+        win = max(names, key=names.count)  # ties: the first platform listed
         out[k] = {**next(o for o in opts if base(o) == win), "var": win}
     return out
 
@@ -227,6 +250,7 @@ def colour_options(m: dict) -> list:
 
 
 # ---------- floats ----------
+
 
 def _float_tracks(m: dict, bounds: dict, t0: float, t1: float) -> list[dict]:
     """Argo floats for the scene, from the GDAC profile index the Argo layer already keeps.
@@ -241,7 +265,9 @@ def _float_tracks(m: dict, bounds: dict, t0: float, t1: float) -> list[dict]:
     if not cfg:
         return []
     pad = FLOAT_INDEX_PAD_DAYS * 86400000.0
-    res = argo_logic.profiles_in(bounds["min_lat"], bounds["max_lat"], bounds["min_lon"], bounds["max_lon"], t0 - pad, t1 + pad)
+    res = argo_logic.profiles_in(
+        bounds["min_lat"], bounds["max_lat"], bounds["min_lon"], bounds["max_lon"], t0 - pad, t1 + pad
+    )
     if res.get("status") != "ready":
         return [{"status": res.get("status", "error")}]
     by_wmo: dict = {}
@@ -263,16 +289,28 @@ def _float_tracks(m: dict, bounds: dict, t0: float, t1: float) -> list[dict]:
     if dacs:
         dacs = {str(d).lower() for d in ([dacs] if isinstance(dacs, str) else dacs)}
         centre = {str(r[0]): str(r[6]).lower() for r in argo_logic.list_floats().get("floats", [])}
-        wanted |= {w for w, profs in by_wmo.items() if ("all" in dacs or centre.get(w) in dacs) and any(t0 <= p[0] <= t1 for p in profs)}
+        wanted |= {
+            w
+            for w, profs in by_wmo.items()
+            if ("all" in dacs or centre.get(w) in dacs) and any(t0 <= p[0] <= t1 for p in profs)
+        }
     out = []
     for wmo in sorted(wanted):
         profs = sorted(by_wmo.get(wmo, []))
         if profs:
-            out.append({"wmo": wmo, "time_ms": [p[0] for p in profs], "lat": [p[1] for p in profs], "lon": [p[2] for p in profs]})
+            out.append(
+                {
+                    "wmo": wmo,
+                    "time_ms": [p[0] for p in profs],
+                    "lat": [p[1] for p in profs],
+                    "lon": [p[2] for p in profs],
+                }
+            )
     return out
 
 
 # ---------- scene ----------
+
 
 def _bounds(m: dict) -> dict:
     r = m.get("region") or {}
@@ -284,17 +322,24 @@ def _bounds(m: dict) -> dict:
         rec = _resolve(p, index)
         b = (cache_logic.get_payload(rec["id"], "spatial_3d") or {}).get("bounds") if rec else None
         if b:
-            lats += [b["min_lat"], b["max_lat"]]; lons += [b["min_lon"], b["max_lon"]]
+            lats += [b["min_lat"], b["max_lat"]]
+            lons += [b["min_lon"], b["max_lon"]]
     if not lats:
         raise ValueError("Mission has no 'region' and none of its files are available to derive one")
     pad_lat, pad_lon = (max(lats) - min(lats)) * 0.15 + 0.2, (max(lons) - min(lons)) * 0.15 + 0.4
-    return {"min_lat": min(lats) - pad_lat, "max_lat": max(lats) + pad_lat, "min_lon": min(lons) - pad_lon, "max_lon": max(lons) + pad_lon}
+    return {
+        "min_lat": min(lats) - pad_lat,
+        "max_lat": max(lats) + pad_lat,
+        "min_lon": min(lons) - pad_lon,
+        "max_lon": max(lons) + pad_lon,
+    }
 
 
 def _bathy(bounds: dict, grid: int = BATHY_GRID) -> dict:
     """Strided seabed for the mission box (the full grid for a box this big would be tens of MB). The default is the
     Plotly page's 1-arc-minute ETOPO; a finer `grid` (the three.js page) reads the 15-arc-second ETOPO 2022."""
     from ..core import spatial_logic
+
     return spatial_logic.fetch_bathy_grid(bounds, grid, fine=grid > BATHY_GRID)
 
 
@@ -312,7 +357,7 @@ def scene(m: dict, grid: int = BATHY_GRID) -> dict:
         except Exception:  # noqa: BLE001
             pass
     out = {"bounds": bounds, "time_ms": [t0, t1], **_bathy(bounds, grid), "floats": _float_tracks(m, bounds, t0, t1)}
-    if not any("status" in f for f in out["floats"]):      # don't pin a scene made while the Argo index was still building
+    if not any("status" in f for f in out["floats"]):  # don't pin a scene made while the Argo index was still building
         for stale in SCENE_DIR.glob(f"{m['id']}_{grid}_*.json"):
             stale.unlink(missing_ok=True)
         cache.write_text(json.dumps(out))
@@ -345,14 +390,31 @@ def preview(m: dict) -> dict:
         if idx.size < 2:
             continue
         idx = idx[np.unique(np.linspace(0, idx.size - 1, PREVIEW_POINTS).astype(int))]
-        pts = [[round(float(payload["lat"][i]), 3), round(float(payload["lon"][i]), 3)] for i in idx
-               if payload["lat"][i] is not None and payload["lon"][i] is not None]
+        pts = [
+            [round(float(payload["lat"][i]), 3), round(float(payload["lon"][i]), 3)]
+            for i in idx
+            if payload["lat"][i] is not None and payload["lon"][i] is not None
+        ]
         lines.append({"colour": p.get("colour", "#d9c45c"), "width": 2.2 if p.get("width") else 1.4, "points": pts})
-    ships = [{"colour": sh.get("colour", "#e8702a"), "label": sh.get("label", "Ship"), "model": sh.get("model", "rrs_discovery"),
-              "legs": [leg["points"] for leg in sh.get("legs", []) if leg.get("points")]} for sh in m.get("ships", [])]
+    ships = [
+        {
+            "colour": sh.get("colour", "#e8702a"),
+            "label": sh.get("label", "Ship"),
+            "model": sh.get("model", "rrs_discovery"),
+            "legs": [leg["points"] for leg in sh.get("legs", []) if leg.get("points")],
+        }
+        for sh in m.get("ships", [])
+    ]
     try:
         bounds = _bounds(m)
     except Exception:  # noqa: BLE001
         bounds = None
-    return {"bounds": bounds, "time": m.get("time"), "lines": lines, "ships": ships, "kinds": kinds,
-            "floats": bool(m.get("floats")), "stations": m.get("stations", [])}
+    return {
+        "bounds": bounds,
+        "time": m.get("time"),
+        "lines": lines,
+        "ships": ships,
+        "kinds": kinds,
+        "floats": bool(m.get("floats")),
+        "stations": m.get("stations", []),
+    }

@@ -10,13 +10,13 @@ In server mode only, also loads private plugins from
 ~/.glider_playground/plugins.
 """
 
-import json
 import logging
 import os
 import platform
 import re
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -59,12 +59,12 @@ async def _json_500(request: Request, exc: Exception):
     logging.exception("Unhandled error on %s", request.url.path)
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
+
 # Warm the heavy copernicusmarine import in the background at startup, so the
 # first overlay request doesn't pay its ~2s cold-import cost inline (that import
 # happens before the per-phase timers, so it otherwise shows up as unattributed
 # "other" time on the very first overlay). Daemon thread; failures are harmless.
-import threading as _threading
-_threading.Thread(target=copernicus_fetch.warm_up, name="cm-warmup", daemon=True).start()
+threading.Thread(target=copernicus_fetch.warm_up, name="cm-warmup", daemon=True).start()
 # Background overlay prefetch: every READY file gets its Copernicus layers
 # fetched once and stored on disk (see copernicus_prefetch).
 copernicus_prefetch.start()
@@ -73,7 +73,7 @@ erddap_fetch.start()
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
-missions.attach(app)   # experimental, self-contained: see missions/README.md
+missions.attach(app)  # experimental, self-contained: see missions/README.md
 
 
 # ---------- SEO (server deployment only) ----------
@@ -162,7 +162,8 @@ def _index_html() -> str:
         html = re.sub(
             r"<title>.*?</title>",
             lambda _m: f"<title>{SEO_TITLE}</title>\n{_SEO_HEAD.rstrip()}",
-            html, count=1,
+            html,
+            count=1,
         )
         # Let server plugins (e.g. the private analytics beacon) inject markup
         # right before </body>.
@@ -174,8 +175,7 @@ def _index_html() -> str:
 
 # Versioned vendor bundles and images are cached forever; our own HTML/JS/CSS must revalidate
 # every load so an auto-update never leaves users on stale code.
-_IMMUTABLE_SUFFIXES = (".min.js", ".woff", ".woff2", ".ttf", ".png", ".webp",
-                       ".svg", ".jpg", ".jpeg", ".gif", ".ico")
+_IMMUTABLE_SUFFIXES = (".min.js", ".woff", ".woff2", ".ttf", ".png", ".webp", ".svg", ".jpg", ".jpeg", ".gif", ".ico")
 
 
 @app.middleware("http")
@@ -198,6 +198,7 @@ async def log_request_timing(request, call_next):
 
 # ---------- helpers ----------
 
+
 def _resolve_path(file_id: str) -> str:
     path = cache_logic.resolve_path(file_id)
     if not path:
@@ -218,6 +219,7 @@ def _cached_or_live(file_id: str, key: str, compute):
 
 
 # ---------- root / config ----------
+
 
 @app.get("/")
 def read_root():
@@ -262,6 +264,7 @@ def sitemap_xml():
 def get_config():
     try:
         import importlib.metadata
+
         version = importlib.metadata.version("glider-playground")
     except Exception:
         version = "unknown"
@@ -273,6 +276,7 @@ def get_config():
 
 
 # ---------- file management ----------
+
 
 @app.get("/api/files")
 def get_files():
@@ -352,20 +356,27 @@ def pick_files():
         return {"status": "error", "message": "File picker not available in server mode"}
 
     darwin = [
-        "osascript", "-e",
+        "osascript",
+        "-e",
         'set fs to choose file with prompt "Select NetCDF files" of type {"nc"} with multiple selections allowed',
-        "-e", 'set p to ""',
-        "-e", 'repeat with f in fs',
-        "-e", '  set p to p & POSIX path of f & "\n"',
-        "-e", 'end repeat',
-        "-e", 'return p',
+        "-e",
+        'set p to ""',
+        "-e",
+        "repeat with f in fs",
+        "-e",
+        '  set p to p & POSIX path of f & "\n"',
+        "-e",
+        "end repeat",
+        "-e",
+        "return p",
     ]
     other = [
-        sys.executable, "-c",
+        sys.executable,
+        "-c",
         "import tkinter as tk; from tkinter import filedialog; "
         "root = tk.Tk(); root.withdraw(); root.attributes('-topmost', True); "
         "files = filedialog.askopenfilenames(filetypes=[('NetCDF','*.nc')]); "
-        "print('\\n'.join(files))"
+        "print('\\n'.join(files))",
     ]
     try:
         paths = [p for p in _native_picker(darwin, other).splitlines() if p]
@@ -384,14 +395,16 @@ def pick_folder():
         return {"status": "error", "message": "Folder picker not available in server mode"}
 
     darwin = [
-        "osascript", "-e",
-        "tell application (path to frontmost application as text) to return POSIX path of (choose folder)"
+        "osascript",
+        "-e",
+        "tell application (path to frontmost application as text) to return POSIX path of (choose folder)",
     ]
     other = [
-        sys.executable, "-c",
+        sys.executable,
+        "-c",
         "import tkinter as tk; from tkinter import filedialog; "
         "root = tk.Tk(); root.withdraw(); root.attributes('-topmost', True); "
-        "print(filedialog.askdirectory())"
+        "print(filedialog.askdirectory())",
     ]
     try:
         folder = _native_picker(darwin, other)
@@ -433,6 +446,7 @@ def api_live_delete(filename: str):
 
 # ---------- Argo float explorer (experimental; see argo_logic.py) ----------
 
+
 @app.get("/api/argo/floats")
 def api_argo_floats(days: float = 30):
     """Last known position of every Argo float active within `days` (0 = all)."""
@@ -452,6 +466,7 @@ def api_argo_profiles(min_lat: float, max_lat: float, min_lon: float, max_lon: f
 
 # ---------- Research ships (experimental; see ships_logic.py) ----------
 
+
 @app.get("/api/ships")
 def api_ships():
     """Latest reported position of RRS Discovery / James Cook / Sir David Attenborough."""
@@ -459,6 +474,7 @@ def api_ships():
 
 
 # ---------- per-file data endpoints ----------
+
 
 @app.get("/api/map")
 def api_map(id: str):
@@ -536,17 +552,19 @@ def api_map_all():
         path = payload.get("path") or []
         if not path:
             continue
-        tracks.append({
-            "id": fid,
-            "name": rec.get("name"),
-            "path": _downsample_path(path, 800),
-            "dac": payload.get("dac") or [],
-            "last_lat": rec.get("last_lat"),
-            "last_lon": rec.get("last_lon"),
-            "is_nrt": rec.get("is_nrt"),
-            "last_time": rec.get("last_time"),
-            "platform_kind": rec.get("platform_kind") or "",
-        })
+        tracks.append(
+            {
+                "id": fid,
+                "name": rec.get("name"),
+                "path": _downsample_path(path, 800),
+                "dac": payload.get("dac") or [],
+                "last_lat": rec.get("last_lat"),
+                "last_lon": rec.get("last_lon"),
+                "is_nrt": rec.get("is_nrt"),
+                "last_time": rec.get("last_time"),
+                "platform_kind": rec.get("platform_kind") or "",
+            }
+        )
     return {"tracks": tracks}
 
 
@@ -563,7 +581,7 @@ def api_waypoints(glider: str | None = None):
 def api_3d_bathy(id: str, grid: int = bathy_prefetch.GRID):
     """Fine seabed for the file's 3D box, for the three.js 3D view: normally already stored by bathy_prefetch."""
     try:
-        _cached_or_live(id, "spatial_3d", spatial_logic.generate_3d_data)      # the box comes from the 3D payload
+        _cached_or_live(id, "spatial_3d", spatial_logic.generate_3d_data)  # the box comes from the 3D payload
         return Response(content=bathy_prefetch.fetch(id, max(50, min(grid, 1200))), media_type="application/json")
     except LookupError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -617,8 +635,9 @@ def api_nearest_fix_by_coord(id: str, lat: float, lon: float):
 def api_plot_presets_js():
     # glider_playground/plot_presets.json as a blocking script (window.GP_PLOT_PRESETS) so the
     # pages have presets/palettes synchronously — no toolbar reflow after first paint.
-    return Response(presets_logic.as_script(), media_type="application/javascript",
-                    headers={"Cache-Control": "no-cache"})
+    return Response(
+        presets_logic.as_script(), media_type="application/javascript", headers={"Cache-Control": "no-cache"}
+    )
 
 
 @app.get("/api/variables")
@@ -662,37 +681,61 @@ def api_cycles(id: str):
 @app.get("/api/plot_data")
 def api_plot_data(
     response: Response,
-    id: str, x_var: str, y_var: str, c_var: str = "",
+    id: str,
+    x_var: str,
+    y_var: str,
+    c_var: str = "",
     qc_flags: str = "0,1,2,5,8",
     profile_num: float = None,
-    cycle_num: float = None, cycle_var: str = None, sci_phases: str = "", direction_filter: str = "",
+    cycle_num: float = None,
+    cycle_var: str = None,
+    sci_phases: str = "",
+    direction_filter: str = "",
     highlight_profile: bool = False,
     max_points: int = None,
     zoom_x_var: str = None,
-    zoom_x_min: float = None, zoom_x_max: float = None,
-    zoom_y_min: float = None, zoom_y_max: float = None,
+    zoom_x_min: float = None,
+    zoom_x_max: float = None,
+    zoom_y_min: float = None,
+    zoom_y_max: float = None,
     binary: bool = False,
 ) -> dict:
     phases = [int(p) for p in sci_phases.split(",") if p.strip().lstrip("-").isdigit()] if sci_phases else None
-    dirs = [int(d) for d in direction_filter.split(",") if d.strip().lstrip("-").isdigit()] if direction_filter else None
+    dirs = (
+        [int(d) for d in direction_filter.split(",") if d.strip().lstrip("-").isdigit()] if direction_filter else None
+    )
 
     # Cache the packed binary payload per (file signature + version + params): a hit
     # skips the entire read→filter→downsample→pack pipeline. Only the binary form is
     # cached (it's what we send); the JSON path is the rare error/fallback case.
-    cache_key = plot_logic.plot_cache_params_str(
-        x_var=x_var, y_var=y_var, c_var=c_var, qc_flags=qc_flags,
-        profile_num=profile_num,
-        cycle_num=cycle_num, cycle_var=cycle_var, sci_phases=sci_phases,
-        direction_filter=direction_filter,
-        highlight_profile=highlight_profile, max_points=max_points,
-        zoom_x_var=zoom_x_var, zoom_x_min=zoom_x_min, zoom_x_max=zoom_x_max,
-        zoom_y_min=zoom_y_min, zoom_y_max=zoom_y_max,
-    ) if binary else None
+    cache_key = (
+        plot_logic.plot_cache_params_str(
+            x_var=x_var,
+            y_var=y_var,
+            c_var=c_var,
+            qc_flags=qc_flags,
+            profile_num=profile_num,
+            cycle_num=cycle_num,
+            cycle_var=cycle_var,
+            sci_phases=sci_phases,
+            direction_filter=direction_filter,
+            highlight_profile=highlight_profile,
+            max_points=max_points,
+            zoom_x_var=zoom_x_var,
+            zoom_x_min=zoom_x_min,
+            zoom_x_max=zoom_x_max,
+            zoom_y_min=zoom_y_min,
+            zoom_y_max=zoom_y_max,
+        )
+        if binary
+        else None
+    )
     if cache_key is not None:
         hit = cache_logic.get_plot_binary(id, cache_key)
         if hit is not None:
-            return Response(content=hit, media_type="application/octet-stream",
-                            headers={"Server-Timing": "cache;dur=0"})
+            return Response(
+                content=hit, media_type="application/octet-stream", headers={"Server-Timing": "cache;dur=0"}
+            )
 
     # Per-step server timings, surfaced to the frontend's PLOT log as a Server-Timing
     # header so the "server" phase can be broken down (read / filter / serialize / ...).
@@ -703,15 +746,25 @@ def api_plot_data(
     # still drives the JSON path (pydantic fast-paths plain lists straight to bytes);
     # returning a Response short-circuits that and is passed through untouched.
     result = plot_logic.get_plot_data_json(
-        _resolve_path(id), x_var, y_var, c_var,
+        _resolve_path(id),
+        x_var,
+        y_var,
+        c_var,
         qc_flags=qc_flags,
         profile_num=profile_num,
-        cycle_num=cycle_num, cycle_var=cycle_var, sci_phases=phases, direction_filter=dirs,
+        cycle_num=cycle_num,
+        cycle_var=cycle_var,
+        sci_phases=phases,
+        direction_filter=dirs,
         highlight_profile=highlight_profile,
         max_points=max_points,
-        zoom_x_var=zoom_x_var, zoom_x_min=zoom_x_min, zoom_x_max=zoom_x_max,
-        zoom_y_min=zoom_y_min, zoom_y_max=zoom_y_max,
-        timings=timings, binary=binary,
+        zoom_x_var=zoom_x_var,
+        zoom_x_min=zoom_x_min,
+        zoom_x_max=zoom_x_max,
+        zoom_y_min=zoom_y_min,
+        zoom_y_max=zoom_y_max,
+        timings=timings,
+        binary=binary,
     )
     # e.g. "read;dur=120.5, filter;dur=8.2, serialize;dur=45.0"
     server_timing = ", ".join(f"{k};dur={v:.1f}" for k, v in timings.items()) if timings else None
@@ -728,28 +781,55 @@ def api_plot_data(
 
 @app.get("/api/plot_data_bounds")
 def api_plot_data_bounds(
-    id: str, x_var: str, y_var: str, c_var: str = "",
+    id: str,
+    x_var: str,
+    y_var: str,
+    c_var: str = "",
     qc_flags: str = "0,1,2,5,8",
-    x_min: float = None, x_max: float = None, y_min: float = None, y_max: float = None,
-    view_x_min: float = None, view_x_max: float = None, view_y_min: float = None, view_y_max: float = None,
+    x_min: float = None,
+    x_max: float = None,
+    y_min: float = None,
+    y_max: float = None,
+    view_x_min: float = None,
+    view_x_max: float = None,
+    view_y_min: float = None,
+    view_y_max: float = None,
     profile_num: float = None,
-    cycle_num: float = None, cycle_var: str = None, sci_phases: str = "", direction_filter: str = "",
+    cycle_num: float = None,
+    cycle_var: str = None,
+    sci_phases: str = "",
+    direction_filter: str = "",
     highlight_profile: bool = False,
     max_points: int = None,
     binary: bool = False,
 ) -> dict:
     phases = [int(p) for p in sci_phases.split(",") if p.strip().lstrip("-").isdigit()] if sci_phases else None
-    dirs = [int(d) for d in direction_filter.split(",") if d.strip().lstrip("-").isdigit()] if direction_filter else None
+    dirs = (
+        [int(d) for d in direction_filter.split(",") if d.strip().lstrip("-").isdigit()] if direction_filter else None
+    )
     # binary=True: the same packed container as /api/plot_data (an error still comes back as JSON).
     result = plot_logic.get_plot_data_bounds(
-        _resolve_path(id), x_var, y_var, c_var,
+        _resolve_path(id),
+        x_var,
+        y_var,
+        c_var,
         qc_flags=qc_flags,
-        x_min=x_min, x_max=x_max, y_min=y_min, y_max=y_max,
-        view_x_min=view_x_min, view_x_max=view_x_max, view_y_min=view_y_min, view_y_max=view_y_max,
+        x_min=x_min,
+        x_max=x_max,
+        y_min=y_min,
+        y_max=y_max,
+        view_x_min=view_x_min,
+        view_x_max=view_x_max,
+        view_y_min=view_y_min,
+        view_y_max=view_y_max,
         profile_num=profile_num,
-        cycle_num=cycle_num, cycle_var=cycle_var, sci_phases=phases, direction_filter=dirs,
+        cycle_num=cycle_num,
+        cycle_var=cycle_var,
+        sci_phases=phases,
+        direction_filter=dirs,
         highlight_profile=highlight_profile,
-        max_points=max_points, binary=binary,
+        max_points=max_points,
+        binary=binary,
     )
     if isinstance(result, (bytes, bytearray)):
         return Response(content=bytes(result), media_type="application/octet-stream")
@@ -757,6 +837,7 @@ def api_plot_data_bounds(
 
 
 # ---------- satellite / model overlays ----------
+
 
 @app.get("/api/overlays")
 def api_overlays():
@@ -779,7 +860,7 @@ async def api_copernicus_login(request: Request):
     body = await request.json()
     out = copernicus_fetch.login(body.get("username"), body.get("password"))
     if out.get("status") == "success":
-        copernicus_prefetch.retry_errors()   # layers that failed for lack of creds
+        copernicus_prefetch.retry_errors()  # layers that failed for lack of creds
     return out
 
 
@@ -808,7 +889,7 @@ def api_overlay(id: str, var: str, latest: bool = False):
     if data is None:
         data, err = copernicus_prefetch.fetch_layer(id, var, latest=latest)
         if err is not None:
-            return err   # plain JSON error (the rare fallback path)
+            return err  # plain JSON error (the rare fallback path)
     # Packed binary (uint32 header len + JSON header + raw LE float32
     # lat/lon/val) so the browser skips JSON.parse of a ~100k-element list.
     return Response(content=data, media_type="application/octet-stream")
@@ -837,6 +918,7 @@ def api_overlay_latest_date(var: str):
 
 # ---------- server-only plugins ----------
 
+
 def _load_server_plugins() -> None:
     """Load optional, private server-only extensions.
 
@@ -854,9 +936,7 @@ def _load_server_plugins() -> None:
     import glob
     import importlib.util
 
-    plugin_dir = os.getenv("GP_PLUGINS_DIR") or os.path.expanduser(
-        "~/.glider_playground/plugins"
-    )
+    plugin_dir = os.getenv("GP_PLUGINS_DIR") or os.path.expanduser("~/.glider_playground/plugins")
     for path in sorted(glob.glob(os.path.join(plugin_dir, "*.py"))):
         name = os.path.splitext(os.path.basename(path))[0]
         try:

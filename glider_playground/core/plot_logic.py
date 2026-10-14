@@ -18,6 +18,7 @@ import logging
 import struct
 import shutil
 import xarray as xr
+
 # Import dask once on the main thread: xarray imports it lazily, and concurrent first imports from
 # worker threads deadlock on the module import lock. Optional dependency.
 try:
@@ -27,7 +28,6 @@ except Exception:
 import numpy as np
 import pandas as pd
 from netCDF4 import Dataset
-import datetime
 import os
 import functools
 import threading
@@ -100,11 +100,26 @@ def _pack_plot_binary(meta, arrays):
     hjson = json.dumps(header).encode("utf-8")
     return b"".join([struct.pack("<I", len(hjson)), hjson, *bufs])
 
-def plot_cache_params_str(*, x_var, y_var, c_var, qc_flags,
-                          profile_num, cycle_num, cycle_var, sci_phases,
-                          direction_filter, highlight_profile,
-                          max_points, zoom_x_var, zoom_x_min, zoom_x_max,
-                          zoom_y_min, zoom_y_max):
+
+def plot_cache_params_str(
+    *,
+    x_var,
+    y_var,
+    c_var,
+    qc_flags,
+    profile_num,
+    cycle_num,
+    cycle_var,
+    sci_phases,
+    direction_filter,
+    highlight_profile,
+    max_points,
+    zoom_x_var,
+    zoom_x_min,
+    zoom_x_max,
+    zoom_y_min,
+    zoom_y_max,
+):
     """The output-affecting params, serialized into the binary plot-cache key.
 
     Shared by the /api/plot_data endpoint (building the key from the request) and
@@ -114,12 +129,27 @@ def plot_cache_params_str(*, x_var, y_var, c_var, qc_flags,
     here ARE the cache contract; changing them invalidates existing entries (bump
     CACHE_VERSION if you do).
     """
-    return "|".join(str(v) for v in (
-        x_var, y_var, c_var, qc_flags,
-        profile_num, cycle_num, cycle_var, sci_phases, direction_filter,
-        highlight_profile, max_points,
-        zoom_x_var, zoom_x_min, zoom_x_max, zoom_y_min, zoom_y_max,
-    ))
+    return "|".join(
+        str(v)
+        for v in (
+            x_var,
+            y_var,
+            c_var,
+            qc_flags,
+            profile_num,
+            cycle_num,
+            cycle_var,
+            sci_phases,
+            direction_filter,
+            highlight_profile,
+            max_points,
+            zoom_x_var,
+            zoom_x_min,
+            zoom_x_max,
+            zoom_y_min,
+            zoom_y_max,
+        )
+    )
 
 
 # Preloaded arrays and CTD overlays live on disk (.npy), never permanently
@@ -180,7 +210,7 @@ def _load_ctd_overlay(cache_dir: Path):
 # Computed once per file by derive_logic and persisted to disk in both memory modes, then merged
 # into the variable list and read path like native vars.
 _DERIVED_CACHE_DIR = _DISK_CACHE_ROOT / "derived"
-_DERIVED_META: dict = {}            # filepath -> {name: {"units","description","type"}}
+_DERIVED_META: dict = {}  # filepath -> {name: {"units","description","type"}}
 _DERIVED_META_LOCK = threading.RLock()
 
 
@@ -284,8 +314,7 @@ def _bust_caches():
     Busting it would throw away prewarmed CTD results the moment any other
     file is opened, which is why Interpolate felt slow after switching files.
     """
-    for fn in (_get_var_names, _read_vars_cached, _get_var_units,
-               get_variables, get_dataset_info, get_profiles):
+    for fn in (_get_var_names, _read_vars_cached, _get_var_units, get_variables, get_dataset_info, get_profiles):
         try:
             fn.cache_clear()
         except AttributeError:
@@ -299,6 +328,7 @@ def stream_preload_to_disk(filepath: str, is_removed_fn=None):
     returns, _PRELOADED[filepath] is set to True and arrays live on the SSD.
     """
     import gc
+
     d = _preload_dir(filepath)
     d.mkdir(parents=True, exist_ok=True)
     # A fresh preload makes anything computed from the previous one stale.
@@ -462,6 +492,7 @@ def _overlay_to_canonical(overlay, var_map):
             canon_dict[f"{canon}_QC"] = overlay[qc_actual]
     return canon_dict
 
+
 # For TEMP/CNDC fill: look for real (non-interpolated) samples within this
 # time and depth window around the target. If nothing is found the gap is
 # left as NaN — glider dive/climb asymmetries can mean there is no honest
@@ -531,7 +562,7 @@ def _ctd_from_disk(filepath, interpolate: bool, apply_ctd_qc: bool):
         except Exception:
             pass
 
-    time_var = "TIME" if "TIME" in pre else next((v for v in pre if 'TIME' in v.upper()), None)
+    time_var = "TIME" if "TIME" in pre else next((v for v in pre if "TIME" in v.upper()), None)
     data_dict = _build_ctd_canonical_dict(pre, var_map, time_var)
     if not any(c in data_dict for c in CTD_VARS):
         return None
@@ -540,9 +571,11 @@ def _ctd_from_disk(filepath, interpolate: bool, apply_ctd_qc: bool):
         clean_actual = _ctd_from_disk(filepath, False, True)
         clean_canon = _overlay_to_canonical(clean_actual, var_map) if clean_actual else {}
         clean_changed = bool(clean_canon) and any(
-            c in clean_canon and c in data_dict
-            and (clean_canon[c].shape != data_dict[c].shape
-                 or np.any(np.isnan(clean_canon[c]) != np.isnan(data_dict[c])))
+            c in clean_canon
+            and c in data_dict
+            and (
+                clean_canon[c].shape != data_dict[c].shape or np.any(np.isnan(clean_canon[c]) != np.isnan(data_dict[c]))
+            )
             for c in CTD_VARS
         )
         if not clean_changed:
@@ -558,13 +591,19 @@ def _ctd_from_disk(filepath, interpolate: bool, apply_ctd_qc: bool):
             if k in data_dict:
                 data_dict[k] = arr.copy()
         processed = _apply_ctd_processing(
-            data_dict, time_var, _get_var_units(filepath),
-            interpolate=True, apply_ctd_qc=False,
+            data_dict,
+            time_var,
+            _get_var_units(filepath),
+            interpolate=True,
+            apply_ctd_qc=False,
         )
     else:
         processed = _apply_ctd_processing(
-            data_dict, time_var, _get_var_units(filepath),
-            interpolate=interpolate, apply_ctd_qc=apply_ctd_qc,
+            data_dict,
+            time_var,
+            _get_var_units(filepath),
+            interpolate=interpolate,
+            apply_ctd_qc=apply_ctd_qc,
         )
 
     overlay = _emit_overlay(processed, var_map)
@@ -601,7 +640,7 @@ def _hard_time_valid_mask(t_vals):
     out-of-range (pre-1990 / future) but well-ordered timestamp is NOT dropped
     here; that's flagged QC=4 (see derive_logic._compute_time_qc) and left to
     the normal per-variable flag filtering, like everything else."""
-    t_int = np.asarray(t_vals).astype('datetime64[ns]').view('int64')
+    t_int = np.asarray(t_vals).astype("datetime64[ns]").view("int64")
     valid = ~_isnull(t_vals)
     INT_MIN = np.iinfo(np.int64).min
     safe = np.where(valid, t_int, INT_MIN)
@@ -702,7 +741,7 @@ def _apply_ctd_processing(data_dict, time_var, units_map, interpolate=False, app
         # Zero flagging — treat 0.0 as fill value
         for v in present:
             vals = new_dict[v]
-            zero_mask = (vals == 0.0)
+            zero_mask = vals == 0.0
             if np.any(zero_mask):
                 new_dict[f"{v}_QC"][zero_mask] = 9
                 vals[zero_mask] = np.nan
@@ -711,7 +750,7 @@ def _apply_ctd_processing(data_dict, time_var, units_map, interpolate=False, app
         _report_ctd_stage("CTD interp: parsing timestamps")
         t_vals = new_dict[time_var]
         try:
-            t_dt = pd.DatetimeIndex(pd.to_datetime(t_vals, errors='coerce'))
+            t_dt = pd.DatetimeIndex(pd.to_datetime(t_vals, errors="coerce"))
         except Exception:
             t_dt = None
 
@@ -746,13 +785,13 @@ def _apply_ctd_processing(data_dict, time_var, units_map, interpolate=False, app
                         known = ~np.isnan(sub_vals)
                         interp_sub = (
                             pd.Series(sub_vals, index=sub_index)
-                            .interpolate(method='time', limit_direction='both')
+                            .interpolate(method="time", limit_direction="both")
                             .to_numpy()
                         )
 
                         # Cap: accept a fill only if its real neighbours are within CTD_INTERP_MAX_GAP_MINUTES.
                         # Normalize the index to ns first: asi8 uses the index's native unit, which varies (pandas>=2).
-                        idx_i8 = sub_index.astype('datetime64[ns]').astype('int64')
+                        idx_i8 = sub_index.astype("datetime64[ns]").astype("int64")
                         prev_known = np.maximum.accumulate(np.where(known, idx_i8, INT_MIN))
                         next_known = np.minimum.accumulate(np.where(known, idx_i8, np.iinfo(np.int64).max)[::-1])[::-1]
                         has_both = (prev_known != INT_MIN) & (next_known != np.iinfo(np.int64).max)
@@ -765,8 +804,8 @@ def _apply_ctd_processing(data_dict, time_var, units_map, interpolate=False, app
                         new_dict["PRES"] = out
                         new_dict["PRES_QC"][filled] = 8
 
-
     return new_dict
+
 
 @functools.lru_cache(maxsize=32)
 def _get_var_names(filepath):
@@ -786,6 +825,7 @@ def _get_var_names(filepath):
         names = list(dict.fromkeys(list(names) + der))
     return names
 
+
 @functools.lru_cache(maxsize=8)
 def _read_vars_cached(filepath, var_names_tuple):
     result = None
@@ -801,12 +841,15 @@ def _read_vars_cached(filepath, var_names_tuple):
     if result is None and os.path.exists(filepath):
         try:
             with NETCDF_LOCK, xr.open_dataset(filepath) as ds:
-                result = {name: ds.variables[name].values.copy().ravel() for name in var_names_tuple if name in ds.variables}
+                result = {
+                    name: ds.variables[name].values.copy().ravel() for name in var_names_tuple if name in ds.variables
+                }
         except Exception:
             result = None
     # Fold in any requested variables that were derived post-preload.
     result = _merge_derived(filepath, var_names_tuple, result)
     return result or None
+
 
 @functools.lru_cache(maxsize=32)
 def _get_var_units(filepath):
@@ -814,38 +857,38 @@ def _get_var_units(filepath):
     if os.path.exists(filepath):
         try:
             with NETCDF_LOCK, xr.open_dataset(filepath) as ds:
-                units = {name: str(var.attrs.get('units', '')) for name, var in ds.variables.items()}
+                units = {name: str(var.attrs.get("units", "")) for name, var in ds.variables.items()}
         except Exception:
             units = {}
     for name, m in get_derived_meta(filepath).items():
         units.setdefault(name, m.get("units", ""))
     return units
 
+
 @functools.lru_cache(maxsize=32)
 def get_variables(filepath):
     if not os.path.exists(filepath):
         return []
-    
+
     variables = []
     preloaded = _get_preloaded(filepath)
     try:
         with NETCDF_LOCK, xr.open_dataset(filepath) as glider_data:
             for name, var in glider_data.variables.items():
                 if len(var.dims) > 0:
-                    units = var.attrs.get('units', 'No units')
-                    description = var.attrs.get('long_name', 'No description available')
+                    units = var.attrs.get("units", "No units")
+                    description = var.attrs.get("long_name", "No description available")
                     dtype_str = str(var.dtype)
                     var_type = "datetime" if "datetime" in dtype_str or "M8" in dtype_str else "numeric"
-                    entry = {
-                        "name": name,
-                        "units": units,
-                        "type": var_type,
-                        "description": description
-                    }
+                    entry = {"name": name, "units": units, "type": var_type, "description": description}
                     # New sensors can ship as placeholders that are all _FillValue (NaN once decoded).
                     # Checked on the memory-mapped preload copy, not var.values, which would pin every array in RAM.
-                    if var.dtype.kind == "f" and preloaded is not None and name in preloaded \
-                            and not np.isfinite(preloaded[name]).any():
+                    if (
+                        var.dtype.kind == "f"
+                        and preloaded is not None
+                        and name in preloaded
+                        and not np.isfinite(preloaded[name]).any()
+                    ):
                         entry["empty"] = True
                     variables.append(entry)
     except Exception as e:
@@ -855,35 +898,40 @@ def get_variables(filepath):
     for name, m in get_derived_meta(filepath).items():
         if name in existing:
             continue
-        variables.append({
-            "name": name,
-            "units": m.get("units") or "No units",
-            "type": "numeric",
-            "description": m.get("description") or "No description available",
-            "derived": True,
-        })
+        variables.append(
+            {
+                "name": name,
+                "units": m.get("units") or "No units",
+                "type": "numeric",
+                "description": m.get("description") or "No description available",
+                "derived": True,
+            }
+        )
     return variables
+
 
 @functools.lru_cache(maxsize=32)
 def get_dataset_info(filepath):
     if not os.path.exists(filepath):
         return {"error": "File not found"}
-    
+
     try:
-        with NETCDF_LOCK, Dataset(filepath, 'r') as nc:
+        with NETCDF_LOCK, Dataset(filepath, "r") as nc:
             dims = nc.dimensions
             main_dim_name = next(iter(dims)) if dims else "None"
 
             variables = []
             for name, var in nc.variables.items():
                 if len(var.dimensions) > 0:
-                    description = getattr(var, 'long_name', 'No description available')
-                    units = getattr(var, 'units', '')
-                    variables.append({
-                        "name": name,
-                        "description": str(description),
-                        "units": str(units),
-                    })
+                    description = getattr(var, "long_name", "No description available")
+                    units = getattr(var, "units", "")
+                    variables.append(
+                        {
+                            "name": name,
+                            "description": str(description),
+                            "units": str(units),
+                        }
+                    )
 
             global_attrs = {attr: str(getattr(nc, attr)) for attr in nc.ncattrs()}
     except Exception as e:
@@ -893,12 +941,14 @@ def get_dataset_info(filepath):
     for name, m in get_derived_meta(filepath).items():
         if name in existing:
             continue
-        variables.append({
-            "name": name,
-            "description": m.get("description") or "No description available",
-            "units": m.get("units") or "",
-            "derived": True,
-        })
+        variables.append(
+            {
+                "name": name,
+                "description": m.get("description") or "No description available",
+                "units": m.get("units") or "",
+                "derived": True,
+            }
+        )
 
     variables.sort(key=lambda x: x["name"].lower())
 
@@ -925,11 +975,8 @@ def get_dataset_info(filepath):
                         }
                         break
 
-    return {
-        "dimension_name": main_dim_name,
-        "variables": variables,
-        "global_attributes": global_attrs
-    }
+    return {"dimension_name": main_dim_name, "variables": variables, "global_attributes": global_attrs}
+
 
 @functools.lru_cache(maxsize=32)
 def get_profiles(filepath):
@@ -948,13 +995,15 @@ def get_profiles(filepath):
     if "TIME" in var_names:
         time_var = "TIME"
     else:
-        time_vars = [v for v in var_names if 'TIME' in v.upper()]
+        time_vars = [v for v in var_names if "TIME" in v.upper()]
         if time_vars:
             time_var = time_vars[0]
 
     vars_to_read = {"PROFILE_NUMBER"}
-    if has_direction: vars_to_read.add("PROFILE_DIRECTION")
-    if time_var: vars_to_read.add(time_var)
+    if has_direction:
+        vars_to_read.add("PROFILE_DIRECTION")
+    if time_var:
+        vars_to_read.add(time_var)
 
     data_dict = _read_vars_cached(filepath, tuple(sorted(vars_to_read)))
     if data_dict is None:
@@ -982,11 +1031,11 @@ def get_profiles(filepath):
     profiles = []
     for p in grouped.groups.keys():
         entry = {"number": int(p) if float(p).is_integer() else float(p)}
-        
+
         if has_direction and d_first is not None:
             val = d_first.get(p)
             entry["direction"] = None if pd.isnull(val) else int(val)
-            
+
         if time_var and t_min is not None and t_max is not None:
             p_min = t_min.get(p)
             p_max = t_max.get(p)
@@ -1005,7 +1054,7 @@ def _apply_profile_mask(data_dict, profile_num):
     if profile_num is None or "PROFILE_NUMBER" not in data_dict:
         return None
     prof_vals = data_dict["PROFILE_NUMBER"].astype(float)
-    with np.errstate(invalid='ignore'):
+    with np.errstate(invalid="ignore"):
         return (prof_vals == float(profile_num)) & ~np.isnan(prof_vals)
 
 
@@ -1013,7 +1062,7 @@ def _apply_cycle_mask(data_dict, cycle_num, cycle_var):
     if cycle_num is None or not cycle_var or cycle_var not in data_dict:
         return None
     vals = data_dict[cycle_var].astype(float)
-    with np.errstate(invalid='ignore'):
+    with np.errstate(invalid="ignore"):
         return (vals == float(cycle_num)) & ~np.isnan(vals)
 
 
@@ -1022,7 +1071,7 @@ def _apply_phase_mask(data_dict, sci_phases):
         return None
     allowed = [float(p) for p in sci_phases]
     phase_vals = data_dict["SCI_PHASE"].astype(float)
-    with np.errstate(invalid='ignore'):
+    with np.errstate(invalid="ignore"):
         return np.isin(phase_vals, allowed) & ~np.isnan(phase_vals)
 
 
@@ -1031,14 +1080,35 @@ def _apply_direction_mask(data_dict, directions):
         return None
     allowed = [float(d) for d in directions]
     dir_vals = data_dict["PROFILE_DIRECTION"].astype(float)
-    with np.errstate(invalid='ignore'):
+    with np.errstate(invalid="ignore"):
         return np.isin(dir_vals, allowed) & ~np.isnan(dir_vals)
 
 
-def get_plot_data_json(filepath, x_var, y_var, c_var="", qc_flags="0,1,2,5,8", profile_num=None, cycle_num=None, cycle_var=None, sci_phases=None, direction_filter=None, highlight_profile=False, max_points=None, zoom_x_var=None, zoom_x_min=None, zoom_x_max=None, zoom_y_min=None, zoom_y_max=None, timings=None, binary=False):
+def get_plot_data_json(
+    filepath,
+    x_var,
+    y_var,
+    c_var="",
+    qc_flags="0,1,2,5,8",
+    profile_num=None,
+    cycle_num=None,
+    cycle_var=None,
+    sci_phases=None,
+    direction_filter=None,
+    highlight_profile=False,
+    max_points=None,
+    zoom_x_var=None,
+    zoom_x_min=None,
+    zoom_x_max=None,
+    zoom_y_min=None,
+    zoom_y_max=None,
+    timings=None,
+    binary=False,
+):
     # `timings` (optional dict) is filled in place with per-step ms so the endpoint
     # can surface a Server-Timing breakdown. perf_counter / dict writes are ~free.
     _tprev = time.perf_counter()
+
     def _mark(name):
         nonlocal _tprev
         if timings is not None:
@@ -1057,13 +1127,14 @@ def get_plot_data_json(filepath, x_var, y_var, c_var="", qc_flags="0,1,2,5,8", p
         return {"error": "Failed to read dataset"}
 
     vars_to_extract = {x_var, y_var}
-    if c_var and c_var != 'black':
+    if c_var and c_var != "black":
         vars_to_extract.add(c_var)
 
     actual_time_var = "TIME"
     if "TIME" not in var_names:
-        time_vars = [v for v in var_names if 'TIME' in v.upper()]
-        if time_vars: actual_time_var = time_vars[0]
+        time_vars = [v for v in var_names if "TIME" in v.upper()]
+        if time_vars:
+            actual_time_var = time_vars[0]
 
     if actual_time_var in var_names:
         vars_to_extract.add(actual_time_var)
@@ -1113,15 +1184,18 @@ def get_plot_data_json(filepath, x_var, y_var, c_var="", qc_flags="0,1,2,5,8", p
         else:
             canon = _build_ctd_canonical_dict(data_dict, ctd_var_map, actual_time_var)
             processed = _apply_ctd_processing(
-                canon, actual_time_var, _get_var_units(filepath),
-                interpolate=True, apply_ctd_qc=True,
+                canon,
+                actual_time_var,
+                _get_var_units(filepath),
+                interpolate=True,
+                apply_ctd_qc=True,
             )
             data_dict = {**data_dict, **_emit_overlay(processed, ctd_var_map)}
         _mark("ctd")
 
     x_vals = data_dict.get(x_var, np.array([]))
     y_vals = data_dict.get(y_var, np.array([]))
-    c_vals = data_dict.get(c_var) if c_var and c_var != 'black' else None
+    c_vals = data_dict.get(c_var) if c_var and c_var != "black" else None
 
     if len(x_vals) == 0 or len(y_vals) != len(x_vals):
         return {"error": "No data found for selected variables."}
@@ -1132,7 +1206,7 @@ def get_plot_data_json(filepath, x_var, y_var, c_var="", qc_flags="0,1,2,5,8", p
         "time_removed": 0,
         "qc_removed": 0,
         "profile_removed": 0,
-        "valid": 0
+        "valid": 0,
     }
 
     current_mask = ~_isnull(x_vals) & ~_isnull(y_vals)
@@ -1153,24 +1227,29 @@ def get_plot_data_json(filepath, x_var, y_var, c_var="", qc_flags="0,1,2,5,8", p
     # points and grey the rest. The window is in the main plot's x_var / depth
     # space, so test the main x column and depth (y_var) here. Folds into the
     # selection mask so a profile/cycle filter and the zoom narrow it together.
-    if (highlight_profile and zoom_x_var
-            and zoom_x_min is not None and zoom_x_max is not None
-            and zoom_y_min is not None and zoom_y_max is not None):
+    if (
+        highlight_profile
+        and zoom_x_var
+        and zoom_x_min is not None
+        and zoom_x_max is not None
+        and zoom_y_min is not None
+        and zoom_y_max is not None
+    ):
         zx = data_dict.get(zoom_x_var)
         if zx is not None and len(zx) == len(x_vals):
             if np.issubdtype(zx.dtype, np.datetime64):
-                zx_lo = np.datetime64(pd.to_datetime(zoom_x_min, unit='ms'))
-                zx_hi = np.datetime64(pd.to_datetime(zoom_x_max, unit='ms'))
-                with np.errstate(invalid='ignore'):
+                zx_lo = np.datetime64(pd.to_datetime(zoom_x_min, unit="ms"))
+                zx_hi = np.datetime64(pd.to_datetime(zoom_x_max, unit="ms"))
+                with np.errstate(invalid="ignore"):
                     zoom_mask = (zx >= zx_lo) & (zx <= zx_hi)
             else:
                 zxf = np.asarray(zx, dtype=float)
-                with np.errstate(invalid='ignore'):
+                with np.errstate(invalid="ignore"):
                     zoom_mask = (zxf >= float(zoom_x_min)) & (zxf <= float(zoom_x_max))
             if not np.issubdtype(y_vals.dtype, np.datetime64):
                 yf = np.asarray(y_vals, dtype=float)
                 y_lo, y_hi = sorted((float(zoom_y_min), float(zoom_y_max)))
-                with np.errstate(invalid='ignore'):
+                with np.errstate(invalid="ignore"):
                     zoom_mask &= (yf >= y_lo) & (yf <= y_hi)
             selection_mask = zoom_mask if selection_mask is None else (selection_mask & zoom_mask)
 
@@ -1196,7 +1275,7 @@ def get_plot_data_json(filepath, x_var, y_var, c_var="", qc_flags="0,1,2,5,8", p
             c_vals_numeric = np.zeros(len(c_vals), dtype=float)
             c_vals_numeric[:] = np.nan
             valid_dt_mask = ~_isnull(c_vals)
-            c_vals_numeric[valid_dt_mask] = c_vals[valid_dt_mask].astype('datetime64[s]').astype(float)
+            c_vals_numeric[valid_dt_mask] = c_vals[valid_dt_mask].astype("datetime64[s]").astype(float)
             c_vals = c_vals_numeric
         elif not np.issubdtype(c_vals.dtype, np.floating):
             c_vals = c_vals.astype(float)
@@ -1211,7 +1290,7 @@ def get_plot_data_json(filepath, x_var, y_var, c_var="", qc_flags="0,1,2,5,8", p
         stats["time_removed"] = int(old_sum - current_mask.sum())
 
     try:
-        allowed_flags = [int(f.strip()) for f in qc_flags.split(',') if f.strip().isdigit()]
+        allowed_flags = [int(f.strip()) for f in qc_flags.split(",") if f.strip().isdigit()]
     except Exception:
         allowed_flags = [0, 1, 2, 5, 8]
 
@@ -1251,14 +1330,16 @@ def get_plot_data_json(filepath, x_var, y_var, c_var="", qc_flags="0,1,2,5,8", p
         if len(ctx_idx) > render_cap:
             ctx_idx = ctx_idx[:: int(np.ceil(len(ctx_idx) / render_cap))]
         sub = np.sort(np.concatenate([sel_idx, ctx_idx]))
-        keep = keep[sub]; plot_sel = plot_sel[sub]
+        keep = keep[sub]
+        plot_sel = plot_sel[sub]
     elif stats["valid"] > render_cap:
         # ceil, not floor: valid // cap floors to step=1 whenever valid < 2*cap
         # (e.g. 245386 // 200000 == 1), so the cap leaked up to ~2x its limit and
         # decimated nothing. ceil guarantees the result is <= render_cap.
         step = int(np.ceil(stats["valid"] / render_cap))
         keep = keep[::step]
-        if plot_sel is not None: plot_sel = plot_sel[::step]
+        if plot_sel is not None:
+            plot_sel = plot_sel[::step]
     plot_x = x_vals[keep]
     plot_y = y_vals[keep]
     plot_c = c_vals[keep].astype(float) if c_vals is not None else None
@@ -1289,7 +1370,7 @@ def get_plot_data_json(filepath, x_var, y_var, c_var="", qc_flags="0,1,2,5,8", p
         # x as f64 keeps datetime epoch-ms exact (and value-axis precision); y/c as
         # f32 match the float32 source. in_selection rides along as bytes only when
         # populated (highlight-profile mode), mirroring the JSON path's [] default.
-        x_arr = (plot_x.astype('datetime64[ms]').astype('int64') if is_x_dt else plot_x)
+        x_arr = plot_x.astype("datetime64[ms]").astype("int64") if is_x_dt else plot_x
         arrays = [("x", x_arr, "f64"), ("y", plot_y, "f32")]
         if plot_c is not None:
             arrays.append(("c", plot_c, "f32"))
@@ -1298,7 +1379,7 @@ def get_plot_data_json(filepath, x_var, y_var, c_var="", qc_flags="0,1,2,5,8", p
         _mark("serialize")
         return _pack_plot_binary(meta, arrays)
 
-    x_out = pd.to_datetime(plot_x).strftime('%Y-%m-%d %H:%M:%S').tolist() if is_x_dt else _floats_to_list(plot_x)
+    x_out = pd.to_datetime(plot_x).strftime("%Y-%m-%d %H:%M:%S").tolist() if is_x_dt else _floats_to_list(plot_x)
     y_out = _floats_to_list(plot_y)
     c_out = _floats_to_list(plot_c) if plot_c is not None else []
     _mark("serialize")
@@ -1310,11 +1391,31 @@ def get_plot_data_json(filepath, x_var, y_var, c_var="", qc_flags="0,1,2,5,8", p
         "in_selection": plot_sel.tolist() if plot_sel is not None else [],
     }
 
-def get_plot_data_bounds(filepath, x_var, y_var, c_var="", qc_flags="0,1,2,5,8",
-                          x_min=None, x_max=None, y_min=None, y_max=None, is_x_dt=False,
-                          view_x_min=None, view_x_max=None, view_y_min=None, view_y_max=None,
-                          profile_num=None, cycle_num=None, cycle_var=None, sci_phases=None, direction_filter=None,
-                          highlight_profile=False, max_points=None, binary=False):
+
+def get_plot_data_bounds(
+    filepath,
+    x_var,
+    y_var,
+    c_var="",
+    qc_flags="0,1,2,5,8",
+    x_min=None,
+    x_max=None,
+    y_min=None,
+    y_max=None,
+    is_x_dt=False,
+    view_x_min=None,
+    view_x_max=None,
+    view_y_min=None,
+    view_y_max=None,
+    profile_num=None,
+    cycle_num=None,
+    cycle_var=None,
+    sci_phases=None,
+    direction_filter=None,
+    highlight_profile=False,
+    max_points=None,
+    binary=False,
+):
     if c_var == "None":
         c_var = ""
 
@@ -1326,13 +1427,14 @@ def get_plot_data_bounds(filepath, x_var, y_var, c_var="", qc_flags="0,1,2,5,8",
         return {"error": "Failed to read dataset"}
 
     vars_to_extract = {x_var, y_var}
-    if c_var and c_var != 'black':
+    if c_var and c_var != "black":
         vars_to_extract.add(c_var)
 
     actual_time_var = "TIME"
     if "TIME" not in var_names:
-        time_vars = [v for v in var_names if 'TIME' in v.upper()]
-        if time_vars: actual_time_var = time_vars[0]
+        time_vars = [v for v in var_names if "TIME" in v.upper()]
+        if time_vars:
+            actual_time_var = time_vars[0]
 
     if actual_time_var in var_names:
         vars_to_extract.add(actual_time_var)
@@ -1368,14 +1470,17 @@ def get_plot_data_bounds(filepath, x_var, y_var, c_var="", qc_flags="0,1,2,5,8",
         else:
             canon = _build_ctd_canonical_dict(data_dict, ctd_var_map, actual_time_var)
             processed = _apply_ctd_processing(
-                canon, actual_time_var, _get_var_units(filepath),
-                interpolate=True, apply_ctd_qc=True,
+                canon,
+                actual_time_var,
+                _get_var_units(filepath),
+                interpolate=True,
+                apply_ctd_qc=True,
             )
             data_dict = {**data_dict, **_emit_overlay(processed, ctd_var_map)}
 
     x_vals = data_dict.get(x_var, np.array([]))
     y_vals = data_dict.get(y_var, np.array([]))
-    c_vals = data_dict.get(c_var) if c_var and c_var != 'black' else None
+    c_vals = data_dict.get(c_var) if c_var and c_var != "black" else None
 
     if len(x_vals) == 0:
         return {"error": "No data found."}
@@ -1399,7 +1504,7 @@ def get_plot_data_bounds(filepath, x_var, y_var, c_var="", qc_flags="0,1,2,5,8",
         valid_mask &= selection_mask
 
     try:
-        allowed_flags = [int(f.strip()) for f in qc_flags.split(',') if f.strip().isdigit()]
+        allowed_flags = [int(f.strip()) for f in qc_flags.split(",") if f.strip().isdigit()]
     except Exception:
         allowed_flags = [0, 1, 2, 5, 8]
     for v in [x_var, y_var, c_var]:
@@ -1414,7 +1519,7 @@ def get_plot_data_bounds(filepath, x_var, y_var, c_var="", qc_flags="0,1,2,5,8",
         if np.issubdtype(c_vals.dtype, np.datetime64):
             c_num = np.full(len(c_vals), np.nan)
             ok = ~_isnull(c_vals)
-            c_num[ok] = c_vals[ok].astype('datetime64[s]').astype(float)
+            c_num[ok] = c_vals[ok].astype("datetime64[s]").astype(float)
             c_vals = c_num
         else:
             c_vals = c_vals.astype(float)
@@ -1428,8 +1533,8 @@ def get_plot_data_bounds(filepath, x_var, y_var, c_var="", qc_flags="0,1,2,5,8",
     if x_min is not None and x_max is not None:
         is_dt = np.issubdtype(plot_x.dtype, np.datetime64)
         if is_dt:
-            x_min_dt = np.datetime64(pd.to_datetime(x_min, unit='ms'))
-            x_max_dt = np.datetime64(pd.to_datetime(x_max, unit='ms'))
+            x_min_dt = np.datetime64(pd.to_datetime(x_min, unit="ms"))
+            x_max_dt = np.datetime64(pd.to_datetime(x_max, unit="ms"))
             bounds_mask = (plot_x >= x_min_dt) & (plot_x <= x_max_dt)
         else:
             bounds_mask = (plot_x.astype(float) >= float(x_min)) & (plot_x.astype(float) <= float(x_max))
@@ -1455,8 +1560,8 @@ def get_plot_data_bounds(filepath, x_var, y_var, c_var="", qc_flags="0,1,2,5,8",
     plotted = total
     if view_x_min is not None and view_x_max is not None:
         if np.issubdtype(plot_x.dtype, np.datetime64):
-            vx_min = np.datetime64(pd.to_datetime(view_x_min, unit='ms'))
-            vx_max = np.datetime64(pd.to_datetime(view_x_max, unit='ms'))
+            vx_min = np.datetime64(pd.to_datetime(view_x_min, unit="ms"))
+            vx_max = np.datetime64(pd.to_datetime(view_x_max, unit="ms"))
             view_mask = (plot_x >= vx_min) & (plot_x <= vx_max)
         else:
             view_mask = (plot_x.astype(float) >= float(view_x_min)) & (plot_x.astype(float) <= float(view_x_max))
@@ -1481,7 +1586,7 @@ def get_plot_data_bounds(filepath, x_var, y_var, c_var="", qc_flags="0,1,2,5,8",
 
     if total > render_cap:
         step = total // render_cap
-        complete = step <= 1   # step of 1 keeps every point despite total > cap
+        complete = step <= 1  # step of 1 keeps every point despite total > cap
         plot_x = plot_x[::step]
         plot_y = plot_y[::step]
         if plot_c is not None:
@@ -1497,9 +1602,12 @@ def get_plot_data_bounds(filepath, x_var, y_var, c_var="", qc_flags="0,1,2,5,8",
     units_map = _get_var_units(filepath)
     meta = {
         "is_x_dt": bool(is_x_dt),
-        "c_min": c_min, "c_max": c_max,
+        "c_min": c_min,
+        "c_max": c_max,
         "profile_highlight": bool(highlight_profile and selection_mask is not None),
-        "x_var": x_var, "y_var": y_var, "c_var": c_var,
+        "x_var": x_var,
+        "y_var": y_var,
+        "c_var": c_var,
         "x_units": units_map.get(x_var, ""),
         "y_units": units_map.get(y_var, ""),
         "c_units": units_map.get(c_var, "") if c_var else "",
@@ -1512,7 +1620,7 @@ def get_plot_data_bounds(filepath, x_var, y_var, c_var="", qc_flags="0,1,2,5,8",
     }
     if binary:
         # Same container as get_plot_data_json (see _pack_plot_binary).
-        x_arr = (plot_x.astype('datetime64[ms]').astype('int64') if is_x_dt else plot_x)
+        x_arr = plot_x.astype("datetime64[ms]").astype("int64") if is_x_dt else plot_x
         arrays = [("x", x_arr, "f64"), ("y", plot_y, "f32")]
         if plot_c is not None:
             arrays.append(("c", plot_c, "f32"))
@@ -1520,7 +1628,7 @@ def get_plot_data_bounds(filepath, x_var, y_var, c_var="", qc_flags="0,1,2,5,8",
             arrays.append(("in_selection", plot_sel, "u8"))
         return _pack_plot_binary(meta, arrays)
     return {
-        "x": pd.to_datetime(plot_x).strftime('%Y-%m-%d %H:%M:%S').tolist() if is_x_dt else _floats_to_list(plot_x),
+        "x": pd.to_datetime(plot_x).strftime("%Y-%m-%d %H:%M:%S").tolist() if is_x_dt else _floats_to_list(plot_x),
         "y": _floats_to_list(plot_y),
         "c": _floats_to_list(plot_c) if plot_c is not None else [],
         **meta,
@@ -1541,8 +1649,11 @@ def get_var_time_series(filepath, var):
     if var not in names:
         return {"error": f"'{var}' not in file."}
     time_var = "TIME" if "TIME" in names else next((n for n in names if n.upper() == "TIME"), None)
-    want = (var,) + ((f"{var}_QC",) if f"{var}_QC" in names else ()) + \
-           ((time_var,) if time_var and time_var != var else ())
+    want = (
+        (var,)
+        + ((f"{var}_QC",) if f"{var}_QC" in names else ())
+        + ((time_var,) if time_var and time_var != var else ())
+    )
     data = _read_vars_cached(filepath, want) or {}
     if var not in data:
         return {"error": f"Could not read '{var}'."}

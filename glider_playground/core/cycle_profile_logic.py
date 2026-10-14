@@ -4,6 +4,7 @@ Finds the file's cycle variable (CYCLE_NUMBER or CYCLE), returns each cycle's
 time bounds, and flags whether SCI_PHASE and PROFILE_DIRECTION exist (native
 or derived). The plot filters themselves live in plot_logic.
 """
+
 import os
 import functools
 import numpy as np

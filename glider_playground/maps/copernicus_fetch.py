@@ -66,6 +66,7 @@ def login(username: str, password: str) -> dict:
     logger.info("Copernicus Marine credentials saved for %s", username)
     return {"status": "success"}
 
+
 # Satellite ocean-colour: near-real-time (last ~1y) then multi-year reprocessed.
 _DS_CHL_NRT = "cmems_obs-oc_glo_bgc-plankton_nrt_l4-gapfree-multi-4km_P1D"
 _DS_CHL_MY = "cmems_obs-oc_glo_bgc-plankton_my_l4-gapfree-multi-4km_P1D"
@@ -91,13 +92,21 @@ _DS_SLA_MY = "cmems_obs-sl_glo_phy-ssh_my_allsat-l4-duacs-0.25deg_P1D"
 # Registry of available overlays. `surface` marks the 3D model products whose
 # top depth level we extract. Order here is the order shown in the map legend.
 OVERLAYS: dict[str, dict] = {
-    "chla":     {"datasets": [_DS_CHL_NRT, _DS_CHL_MY], "variable": "CHL",    "surface": False},
-    "temp":     {"datasets": ["cmems_mod_glo_phy-thetao_anfc_0.083deg_P1D-m", _DS_PHY_MY], "variable": "thetao", "surface": True},
-    "salinity": {"datasets": ["cmems_mod_glo_phy-so_anfc_0.083deg_P1D-m", _DS_PHY_MY], "variable": "so",     "surface": True},
-    "o2":       {"datasets": ["cmems_mod_glo_bgc-bio_anfc_0.25deg_P1D-m", _DS_BGC_MY], "variable": "o2",     "surface": True},
-    "ph":       {"datasets": ["cmems_mod_glo_bgc-car_anfc_0.25deg_P1D-m"], "variable": "ph",     "surface": True},
-    "biomass":  {"datasets": ["cmems_mod_glo_bgc-pft_anfc_0.25deg_P1D-m"], "variable": "phyc",   "surface": True},
-    "ssh":      {"datasets": [_DS_SLA_NRT_HI, _DS_SLA_NRT, _DS_SLA_MY], "variable": "sla", "surface": False, "demean": True},
+    "chla": {"datasets": [_DS_CHL_NRT, _DS_CHL_MY], "variable": "CHL", "surface": False},
+    "temp": {
+        "datasets": ["cmems_mod_glo_phy-thetao_anfc_0.083deg_P1D-m", _DS_PHY_MY],
+        "variable": "thetao",
+        "surface": True,
+    },
+    "salinity": {
+        "datasets": ["cmems_mod_glo_phy-so_anfc_0.083deg_P1D-m", _DS_PHY_MY],
+        "variable": "so",
+        "surface": True,
+    },
+    "o2": {"datasets": ["cmems_mod_glo_bgc-bio_anfc_0.25deg_P1D-m", _DS_BGC_MY], "variable": "o2", "surface": True},
+    "ph": {"datasets": ["cmems_mod_glo_bgc-car_anfc_0.25deg_P1D-m"], "variable": "ph", "surface": True},
+    "biomass": {"datasets": ["cmems_mod_glo_bgc-pft_anfc_0.25deg_P1D-m"], "variable": "phyc", "surface": True},
+    "ssh": {"datasets": [_DS_SLA_NRT_HI, _DS_SLA_NRT, _DS_SLA_MY], "variable": "sla", "surface": False, "demean": True},
 }
 
 # Currents is a vector field (uo, vo) rather than a single scalar, so it gets its
@@ -119,6 +128,7 @@ def _import_cm():
     submodules/attributes exist ("has no attribute 'open_dataset'")."""
     with _IMPORT_LOCK:
         import copernicusmarine
+
         server_config.tame_copernicus_logging()
         return copernicusmarine
 
@@ -133,6 +143,7 @@ def warm_up() -> None:
         _import_cm()
     except Exception:
         return
+
 
 # Keep the cell grid under this per side so the globe stays responsive. The
 # satellite CHL-a grid is 1/24° (≈4 km), so 800 keeps a box of up to ~33° per
@@ -155,8 +166,14 @@ def live_date() -> str:
 
 def _cache_key(var, lat_min, lat_max, lon_min, lon_max, date_str):
     # Round to 0.5° so small pan differences hit the same entry.
-    return (var, round(lat_min * 2) / 2, round(lat_max * 2) / 2,
-            round(lon_min * 2) / 2, round(lon_max * 2) / 2, date_str)
+    return (
+        var,
+        round(lat_min * 2) / 2,
+        round(lat_max * 2) / 2,
+        round(lon_min * 2) / 2,
+        round(lon_max * 2) / 2,
+        date_str,
+    )
 
 
 def fetch_overlay(
@@ -179,7 +196,12 @@ def fetch_overlay(
         return {"error": f"Unknown overlay '{var}'", "hint": ""}
 
     return _fetch_cached(
-        var, lat_min, lat_max, lon_min, lon_max, target_date,
+        var,
+        lat_min,
+        lat_max,
+        lon_min,
+        lon_max,
+        target_date,
         lambda cm, lo, la, lo2, la2, d, tm: _fetch(cm, spec, lo, la, lo2, la2, d, tm),
         size_of=lambda r: f"{len(r['points'])} points",
     )
@@ -202,7 +224,12 @@ def fetch_currents(
     On failure: {"error": str, "hint": str}
     """
     return _fetch_cached(
-        "currents", lat_min, lat_max, lon_min, lon_max, target_date,
+        "currents",
+        lat_min,
+        lat_max,
+        lon_min,
+        lon_max,
+        target_date,
         _fetch_currents,
         size_of=lambda r: f"{r['nlat']}x{r['nlon']} grid",
     )
@@ -228,9 +255,9 @@ def _fetch_cached(var, lat_min, lat_max, lon_min, lon_max, target_date, runner, 
 
     # ~12° of latitude centred on the deployment; longitude widened by 1/cos(lat) so the box is
     # physically square. Bigger deployments expand it to cover themselves plus a margin.
-    t_prep = time.time()   # bbox padding + date defaulting (server prep)
-    TARGET = 12.0   # degrees of latitude per side for a typical deployment
-    MARGIN = 2.0    # extra context when the deployment already exceeds TARGET
+    t_prep = time.time()  # bbox padding + date defaulting (server prep)
+    TARGET = 12.0  # degrees of latitude per side for a typical deployment
+    MARGIN = 2.0  # extra context when the deployment already exceeds TARGET
     lat_c = (lat_min + lat_max) / 2.0
     lon_c = (lon_min + lon_max) / 2.0
     half_lat = max(TARGET / 2.0, (lat_max - lat_min) / 2.0 + MARGIN)
@@ -258,8 +285,9 @@ def _fetch_cached(var, lat_min, lat_max, lon_min, lon_max, target_date, runner, 
         out["_timing"] = {"prep": prep, "cache_hit": True}
         return out
 
-    logger.debug("[%s] Fetching for date=%s bbox=(%.1f,%.1f)-(%.1f,%.1f)",
-                  var, date_str, min_lat, min_lon, max_lat, max_lon)
+    logger.debug(
+        "[%s] Fetching for date=%s bbox=(%.1f,%.1f)-(%.1f,%.1f)", var, date_str, min_lat, min_lon, max_lat, max_lon
+    )
     timing = {"download": 0.0, "extract": 0.0, "attempts": 0}
     t0 = time.time()
     result = runner(copernicusmarine, min_lat, max_lat, min_lon, max_lon, date_str, timing)
@@ -315,12 +343,12 @@ def pack_overlay_response(result: dict) -> bytes:
 
 # ---------- internals ----------
 
+
 def _fetch(cm, spec, min_lat, max_lat, min_lon, max_lon, date_str, timing):
     """Try each candidate scalar dataset; cap the date to its max on overrun."""
     return _try_datasets(
         spec["datasets"],
-        lambda dataset_id, d: _open_and_extract(
-            cm, dataset_id, spec, min_lat, max_lat, min_lon, max_lon, d, timing),
+        lambda dataset_id, d: _open_and_extract(cm, dataset_id, spec, min_lat, max_lat, min_lon, max_lon, d, timing),
         date_str,
     )
 
@@ -329,8 +357,7 @@ def _fetch_currents(cm, min_lat, max_lat, min_lon, max_lon, date_str, timing):
     """Fetch the uo/vo current grid, with the same auth/bounds handling."""
     return _try_datasets(
         CURRENTS["datasets"],
-        lambda dataset_id, d: _open_and_extract_vec(
-            cm, dataset_id, min_lat, max_lat, min_lon, max_lon, d, timing),
+        lambda dataset_id, d: _open_and_extract_vec(cm, dataset_id, min_lat, max_lat, min_lon, max_lon, d, timing),
         date_str,
     )
 
@@ -362,8 +389,10 @@ def _try_datasets(dataset_ids, open_fn, date_str):
 
     if too_old is not None:
         # Not a sign-in problem: Copernicus simply has no field this far back.
-        return {"error": f"No Copernicus data before {too_old.tmin} for this layer "
-                         f"(deployment date {date_str})", "hint": ""}
+        return {
+            "error": f"No Copernicus data before {too_old.tmin} for this layer (deployment date {date_str})",
+            "hint": "",
+        }
     return {
         "error": f"Could not retrieve data: {last_err}",
         "hint": "If this is a sign-in problem, enter your Copernicus Marine details below.",
@@ -402,8 +431,13 @@ def _open_full(cm, dataset_id: str, variables: list, surface: bool):
             kwargs["maximum_depth"] = 1.0
         t0 = time.time()
         ds = cm.open_dataset(**kwargs)
-        logger.debug("Opened %s (%s) in %.1fs — reused for the next %d min",
-                    dataset_id, ",".join(variables), time.time() - t0, int(_DS_TTL // 60))
+        logger.debug(
+            "Opened %s (%s) in %.1fs — reused for the next %d min",
+            dataset_id,
+            ",".join(variables),
+            time.time() - t0,
+            int(_DS_TTL // 60),
+        )
         _DS_OPEN[key] = (ds, now)
         return ds
 
@@ -440,8 +474,7 @@ def _subset(ds, dataset_id, min_lat, max_lat, min_lon, max_lon, date_str):
     if date_str < tmin:
         raise _DateOutOfRange(dataset_id, date_str, tmin, tmax)
     if date_str > tmax:
-        logger.debug("%s: %s outside dataset range (%s to %s), using %s",
-                    dataset_id, date_str, tmin, tmax, tmax)
+        logger.debug("%s: %s outside dataset range (%s to %s), using %s", dataset_id, date_str, tmin, tmax, tmax)
         date_str = tmax
     sub = ds.sel({tk: np.datetime64(date_str)}, method="nearest")
     used = str(sub[tk].values)[:10]
@@ -502,8 +535,9 @@ def _open_and_extract(cm, dataset_id, spec, min_lat, max_lat, min_lon, max_lon, 
     # Time the open/subset even when it raises (wrong-dataset / out-of-range
     # miss), so a failed attempt's network cost is still attributed to "download".
     try:
-        ds, used = _open_subset(cm, dataset_id, [spec["variable"]], spec.get("surface", False),
-                                min_lat, max_lat, min_lon, max_lon, date_str)
+        ds, used = _open_subset(
+            cm, dataset_id, [spec["variable"]], spec.get("surface", False), min_lat, max_lat, min_lon, max_lon, date_str
+        )
     finally:
         if timing is not None:
             timing["download"] = timing.get("download", 0.0) + (time.time() - t0)
@@ -521,8 +555,7 @@ def _open_and_extract_vec(cm, dataset_id, min_lat, max_lat, min_lon, max_lon, da
     logger.debug("Fetching currents %s from %s for %s", variables, dataset_id, date_str)
     t0 = time.time()
     try:
-        ds, used = _open_subset(cm, dataset_id, variables, True,
-                                min_lat, max_lat, min_lon, max_lon, date_str)
+        ds, used = _open_subset(cm, dataset_id, variables, True, min_lat, max_lat, min_lon, max_lon, date_str)
     finally:
         if timing is not None:
             timing["download"] = timing.get("download", 0.0) + (time.time() - t0)
@@ -537,8 +570,9 @@ def _open_and_extract_vec(cm, dataset_id, min_lat, max_lat, min_lon, max_lon, da
 
 def _is_auth_error(msg: str) -> bool:
     low = msg.lower()
-    return any(k in low for k in ("401", "403", "unauthorized", "forbidden",
-                                  "credentials", "login required", "authentication"))
+    return any(
+        k in low for k in ("401", "403", "unauthorized", "forbidden", "credentials", "login required", "authentication")
+    )
 
 
 def _extract(ds, variable: str, date_str: str, demean: bool = False) -> dict:
@@ -609,11 +643,11 @@ def _extract(ds, variable: str, date_str: str, demean: bool = False) -> dict:
     points[:, 0] = np.round(lat_grid[mask], 4)
     points[:, 1] = np.round(lon_grid[mask], 4)
     points[:, 2] = np.round(flat, 5)
-    logger.debug("Overlay %s: %d points for %s (p10=%.3f p90=%.3f, stride=%d)",
-                variable, len(points), date_str, p10, p90, stride)
+    logger.debug(
+        "Overlay %s: %d points for %s (p10=%.3f p90=%.3f, stride=%d)", variable, len(points), date_str, p10, p90, stride
+    )
 
-    return {"points": points, "date": date_str, "p10": p10, "p90": p90,
-            "half_deg": half_deg, "units": units}
+    return {"points": points, "date": date_str, "p10": p10, "p90": p90, "half_deg": half_deg, "units": units}
 
 
 def _extract_vec(ds, variables, date_str: str) -> dict:
@@ -689,14 +723,28 @@ def _extract_vec(ds, variables, date_str: str) -> dict:
     dlat = float(lats[1] - lats[0]) if len(lats) >= 2 else 0.083
     dlon = float(lons[1] - lons[0]) if len(lons) >= 2 else 0.083
 
-    logger.debug("Currents: %dx%d grid for %s (speed p90=%.3f max=%.3f, stride=%d)",
-                len(lats), len(lons), date_str, speed_p90, speed_max, stride)
+    logger.debug(
+        "Currents: %dx%d grid for %s (speed p90=%.3f max=%.3f, stride=%d)",
+        len(lats),
+        len(lons),
+        date_str,
+        speed_p90,
+        speed_max,
+        stride,
+    )
 
     return {
-        "lat0": float(lats[0]), "lon0": float(lons[0]),
-        "dlat": dlat, "dlon": dlon,
-        "nlat": len(lats), "nlon": len(lons),
-        "u": u_grid, "v": v_grid,
-        "date": date_str, "speed_p90": speed_p90, "speed_max": speed_max,
-        "half_deg": float(abs(dlat) / 2.0), "units": units,
+        "lat0": float(lats[0]),
+        "lon0": float(lons[0]),
+        "dlat": dlat,
+        "dlon": dlon,
+        "nlat": len(lats),
+        "nlon": len(lons),
+        "u": u_grid,
+        "v": v_grid,
+        "date": date_str,
+        "speed_p90": speed_p90,
+        "speed_max": speed_max,
+        "half_deg": float(abs(dlat) / 2.0),
+        "units": units,
     }

@@ -3,8 +3,8 @@ density) from conductivity using the TEOS-10 / GSW toolbox, derive scientific
 phases and profile numbers from depth, and derive a TIME QC flag (NaT/bad-order/
 out-of-range) so TIME can be filtered by the QC flag chips like any other var.
 
-Run once per file during processing, AFTER preload (see cache_logic). 
-Results are written to the per-file derived store (plot_logic) so they appear 
+Run once per file during processing, AFTER preload (see cache_logic).
+Results are written to the per-file derived store (plot_logic) so they appear
 and behave like native variables everywhere.
 """
 
@@ -17,6 +17,7 @@ from . import spatial_logic
 
 try:
     import gsw
+
     _HAS_GSW = True
 except Exception:  # pragma: no cover - import guard
     _HAS_GSW = False
@@ -30,10 +31,10 @@ _CALC = "Derived (not in original file) — "
 # Profile detection parameters. These are the hardcoded defaults of the
 # pelagos_py "Find Profiles" pipeline step, ported here verbatim so the
 # playground classifies profiles identically.
-PROF_SMOOTHING_WINDOW_SEC = 30        # rolling-mean window (seconds) applied to depth
-PROF_VELOCITY_THRESH = 0.033          # |vertical velocity| (depth units/s) for ascent/descent
-PROF_MIN_DURATION_SEC = 60            # minimum seconds for an ascent/descent run to be trusted
-PROF_GAP_THRESHOLD_MINS = 5           # time gap that splits the record into disconnected chunks
+PROF_SMOOTHING_WINDOW_SEC = 30  # rolling-mean window (seconds) applied to depth
+PROF_VELOCITY_THRESH = 0.033  # |vertical velocity| (depth units/s) for ascent/descent
+PROF_MIN_DURATION_SEC = 60  # minimum seconds for an ascent/descent run to be trusted
+PROF_GAP_THRESHOLD_MINS = 5  # time gap that splits the record into disconnected chunks
 PROF_SURFACING_DEPTH_THRESHOLD = 2.0  # depth below which a turn/propelled run is surfacing
 PROF_MIN_TRANSECT_DURATION_SEC = 300  # minimum duration for an unknown run to be propelled
 
@@ -51,31 +52,66 @@ _PROF_DERIVED_COLUMNS = ["SCI_PHASE", "PROFILE_NUMBER", "PROFILE_DIRECTION", "CY
 # Order-of-magnitude sanity bounds for GSW inputs (not QC): one corrupt sample (CNDC 5e6 mS/cm)
 # overflows inside gsw and poisons the row. Dropped from the derivation only; raw values untouched.
 _CTD_SANE_RANGE = {
-    "CNDC": (-1e3, 1e3),      # mS/cm; seawater is ~1-70
-    "TEMP": (-1e2, 1e2),      # degC; seawater is ~-2-40
-    "PRES": (-1e4, 1e5),      # dbar; deepest ocean is ~11000
+    "CNDC": (-1e3, 1e3),  # mS/cm; seawater is ~1-70
+    "TEMP": (-1e2, 1e2),  # degC; seawater is ~-2-40
+    "PRES": (-1e4, 1e5),  # dbar; deepest ocean is ~11000
 }
 
 # CF-ish metadata for each derived variable.
 DERIVED_METADATA = {
-    "PRAC_SALINITY": {"units": "1", "description": _CALC + "Practical salinity, derived from conductivity via TEOS-10/GSW"},
+    "PRAC_SALINITY": {
+        "units": "1",
+        "description": _CALC + "Practical salinity, derived from conductivity via TEOS-10/GSW",
+    },
     "ABS_SALINITY": {"units": "g/kg", "description": _CALC + "Absolute salinity, derived via TEOS-10/GSW"},
-    "CONS_TEMP": {"units": "degrees_Celsius", "description": _CALC + "Conservative temperature, derived via TEOS-10/GSW"},
+    "CONS_TEMP": {
+        "units": "degrees_Celsius",
+        "description": _CALC + "Conservative temperature, derived via TEOS-10/GSW",
+    },
     "DENSITY": {"units": "kg/m3", "description": _CALC + "In-situ density, derived via TEOS-10/GSW"},
-    "PRAC_SALINITY2": {"units": "1", "description": _CALC + "Practical salinity from the second CTD (CNDC2/TEMP2/PRES2), via TEOS-10/GSW"},
-    "ABS_SALINITY2": {"units": "g/kg", "description": _CALC + "Absolute salinity from the second CTD (CNDC2/TEMP2/PRES2), via TEOS-10/GSW"},
-    "CONS_TEMP2": {"units": "degrees_Celsius", "description": _CALC + "Conservative temperature from the second CTD (CNDC2/TEMP2/PRES2), via TEOS-10/GSW"},
-    "DENSITY2": {"units": "kg/m3", "description": _CALC + "In-situ density from the second CTD (CNDC2/TEMP2/PRES2), via TEOS-10/GSW"},
-    "SCI_PHASE": {"units": "1", "description": _CALC + "Scientific phase classification (0 unknown, 1 ascent, 2 descent, 3 surfacing, 4 parking, 5 inflection, 6 propelled, 7 transition)"},
-    "PROFILE_NUMBER": {"units": "1", "description": _CALC + "Derived profile number (NaN = no profile, e.g. surfacing)"},
-    "PROFILE_DIRECTION": {"units": "1", "description": _CALC + "Profile direction (-1=ascent, 1=descent, 0=transect, NaN otherwise)"},
-    "CYCLE": {"units": "1", "description": _CALC + "Continuous cycle number derived from surfacing-to-descent transitions"},
-    "PROFILE_GRADIENT": {"units": "m/s", "description": _CALC + "Per-profile vertical depth gradient (linear fit over ascent/descent core)"},
+    "PRAC_SALINITY2": {
+        "units": "1",
+        "description": _CALC + "Practical salinity from the second CTD (CNDC2/TEMP2/PRES2), via TEOS-10/GSW",
+    },
+    "ABS_SALINITY2": {
+        "units": "g/kg",
+        "description": _CALC + "Absolute salinity from the second CTD (CNDC2/TEMP2/PRES2), via TEOS-10/GSW",
+    },
+    "CONS_TEMP2": {
+        "units": "degrees_Celsius",
+        "description": _CALC + "Conservative temperature from the second CTD (CNDC2/TEMP2/PRES2), via TEOS-10/GSW",
+    },
+    "DENSITY2": {
+        "units": "kg/m3",
+        "description": _CALC + "In-situ density from the second CTD (CNDC2/TEMP2/PRES2), via TEOS-10/GSW",
+    },
+    "SCI_PHASE": {
+        "units": "1",
+        "description": _CALC
+        + "Scientific phase classification (0 unknown, 1 ascent, 2 descent, 3 surfacing, 4 parking, 5 inflection, 6 propelled, 7 transition)",
+    },
+    "PROFILE_NUMBER": {
+        "units": "1",
+        "description": _CALC + "Derived profile number (NaN = no profile, e.g. surfacing)",
+    },
+    "PROFILE_DIRECTION": {
+        "units": "1",
+        "description": _CALC + "Profile direction (-1=ascent, 1=descent, 0=transect, NaN otherwise)",
+    },
+    "CYCLE": {
+        "units": "1",
+        "description": _CALC + "Continuous cycle number derived from surfacing-to-descent transitions",
+    },
+    "PROFILE_GRADIENT": {
+        "units": "m/s",
+        "description": _CALC + "Per-profile vertical depth gradient (linear fit over ascent/descent core)",
+    },
 }
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _interp_over_time(arr, time_vals):
     a = np.asarray(arr, dtype=float)
@@ -95,6 +131,7 @@ def _interp_over_time(arr, time_vals):
     except Exception:
         return a
 
+
 def _resolve_time_var(names):
     if "TIME" in names:
         return "TIME"
@@ -103,12 +140,15 @@ def _resolve_time_var(names):
             return n
     return None
 
+
 def provided(n, existing):
     return n in existing or (n + "_ADJUSTED") in existing
+
 
 # ---------------------------------------------------------------------------
 # Core Computations
 # ---------------------------------------------------------------------------
+
 
 def _compute_time_qc(filepath, log, names, existing, time_var):
     """Derive a QC flag for TIME once per file, so TIME can be filtered by the
@@ -159,10 +199,13 @@ def _compute_time_qc(filepath, log, names, existing, time_var):
     non_monotonic = valid & (t_int < prev_max)
     qc[non_monotonic] = 4
 
-    meta = {qc_name: {
-        "units": "1", "type": "numeric",
-        "description": _CALC + "Derived TIME QC (1=good, 4=bad [out-of-range or non-monotonic], 9=missing/NaT)",
-    }}
+    meta = {
+        qc_name: {
+            "units": "1",
+            "type": "numeric",
+            "description": _CALC + "Derived TIME QC (1=good, 4=bad [out-of-range or non-monotonic], 9=missing/NaT)",
+        }
+    }
     return [qc_name], {qc_name: qc}, meta
 
 
@@ -188,7 +231,7 @@ def _compute_ctd(filepath, log, names, existing, time_var, suffix=""):
     needed.update([lat_name, lon_name])
     if time_var:
         needed.add(time_var)
-        
+
     data = plot_logic._read_vars_cached(filepath, tuple(sorted(needed)))
     if not data:
         return [], {}, {}
@@ -197,8 +240,11 @@ def _compute_ctd(filepath, log, names, existing, time_var, suffix=""):
     units_map = plot_logic._get_var_units(filepath)
     canon = plot_logic._build_ctd_canonical_dict(data, var_map, time_var)
     cleaned = plot_logic._apply_ctd_processing(
-        canon, time_var, units_map,
-        interpolate=True, apply_ctd_qc=True,
+        canon,
+        time_var,
+        units_map,
+        interpolate=True,
+        apply_ctd_qc=True,
     )
 
     try:
@@ -226,10 +272,12 @@ def _compute_ctd(filepath, log, names, existing, time_var, suffix=""):
     pres = _interp_over_time(pres, tvals)
 
     n = len(pres)
+
     def _fit(arr):
         if arr.ndim == 0 or arr.size == 1:
             return np.full(n, float(arr.reshape(-1)[0]) if arr.size else np.nan)
         return arr
+
     lat, lon = _fit(lat), _fit(lon)
 
     # GPS fixes are surface-only, so lat/lon are NaN on CTD rows. Time-interpolate position onto them,
@@ -242,9 +290,11 @@ def _compute_ctd(filepath, log, names, existing, time_var, suffix=""):
         return [], {}, {}
 
     bad = np.zeros(n, dtype=bool)
-    for arr, (lo, hi) in ((cndc, _CTD_SANE_RANGE["CNDC"]),
-                          (temp, _CTD_SANE_RANGE["TEMP"]),
-                          (pres, _CTD_SANE_RANGE["PRES"])):
+    for arr, (lo, hi) in (
+        (cndc, _CTD_SANE_RANGE["CNDC"]),
+        (temp, _CTD_SANE_RANGE["TEMP"]),
+        (pres, _CTD_SANE_RANGE["PRES"]),
+    ):
         with np.errstate(invalid="ignore"):
             bad |= np.isfinite(arr) & ((arr < lo) | (arr > hi))
     n_bad = int(bad.sum())
@@ -275,12 +325,13 @@ def _compute_ctd(filepath, log, names, existing, time_var, suffix=""):
         arr = np.asarray(computed[name], dtype=float)
         arrays[name] = arr
         meta[name] = {**DERIVED_METADATA[name], "type": "numeric"}
-        
+
         qc_name = name + "_QC"
         if not provided(qc_name, existing) and qc_name not in existing:
             arrays[qc_name] = np.where(np.isfinite(arr), 1, 9).astype(np.int8)
             meta[qc_name] = {
-                "units": "1", "type": "numeric",
+                "units": "1",
+                "type": "numeric",
                 "description": f"Quality flag for {name} (1=good, 9=missing; derived)",
             }
 
@@ -290,9 +341,7 @@ def _compute_ctd(filepath, log, names, existing, time_var, suffix=""):
 def _prof_compute_chunk_id(time_seconds, gap_threshold_seconds):
     # Real data gaps split the record into disconnected chunks - velocity is
     # never computed, and no run ever allowed, across one.
-    return np.concatenate((
-        [0], np.cumsum(np.diff(time_seconds) > gap_threshold_seconds)
-    )).astype(np.int32)
+    return np.concatenate(([0], np.cumsum(np.diff(time_seconds) > gap_threshold_seconds))).astype(np.int32)
 
 
 def _prof_gradient_per_chunk(values, time_seconds, chunk_id):
@@ -314,12 +363,7 @@ def _prof_smoothed_velocity(depth, time, time_seconds, chunk_id, window):
     depth_series = pd.Series(depth, index=pd.DatetimeIndex(time))
     smoothed_depth = depth_series.rolling(window, center=True, min_periods=1).mean().to_numpy()
     velocity = _prof_gradient_per_chunk(smoothed_depth, time_seconds, chunk_id)
-    return (
-        pd.Series(velocity, index=depth_series.index)
-        .rolling(window, center=True, min_periods=1)
-        .median()
-        .to_numpy()
-    )
+    return pd.Series(velocity, index=depth_series.index).rolling(window, center=True, min_periods=1).median().to_numpy()
 
 
 def _prof_runs_by_chunk(mask, chunk_id):
@@ -358,18 +402,25 @@ def _prof_classify_ascent_descent(smoothed_velocity, time_seconds, chunk_id, vel
     return np.repeat(np.where(keep, run_values, _UNKNOWN), run_ends - run_starts).astype(np.int8)
 
 
-def _prof_classify_propelled_surfacing(phase, depth, time_seconds, chunk_id,
-                                        surfacing_depth_threshold, min_duration_seconds,
-                                        min_transect_duration_seconds, transect_phase):
+def _prof_classify_propelled_surfacing(
+    phase,
+    depth,
+    time_seconds,
+    chunk_id,
+    surfacing_depth_threshold,
+    min_duration_seconds,
+    min_transect_duration_seconds,
+    transect_phase,
+):
     # Remaining unknowns: a long flat stretch away from the surface is propelled (ALR-class) or
     # parking (everything else); the long minimum duration keeps turnarounds out. See `transect_phase`.
-    for rs, re in _prof_runs_by_chunk(phase == _UNKNOWN, chunk_id):
-        duration = time_seconds[re - 1] - time_seconds[rs]
-        if np.median(depth[rs:re]) <= surfacing_depth_threshold:
+    for start, end in _prof_runs_by_chunk(phase == _UNKNOWN, chunk_id):
+        duration = time_seconds[end - 1] - time_seconds[start]
+        if np.median(depth[start:end]) <= surfacing_depth_threshold:
             if duration >= min_duration_seconds:
-                phase[rs:re] = _SURFACING
+                phase[start:end] = _SURFACING
         elif duration >= min_transect_duration_seconds:
-            phase[rs:re] = transect_phase
+            phase[start:end] = transect_phase
 
 
 def _prof_classify_inflection(phase, depth, chunk_id, surfacing_depth_threshold):
@@ -385,9 +436,9 @@ def _prof_classify_inflection(phase, depth, chunk_id, surfacing_depth_threshold)
         lo = s if start_gap else s - 1
 
         if after == _ASCENT and before in (_DESCENT, None):
-            idx = lo + np.argmax(depth[lo:e + 1])
+            idx = lo + np.argmax(depth[lo : e + 1])
         elif after == _DESCENT and before in (_ASCENT, None):
-            idx = lo + np.argmin(depth[lo:e + 1])
+            idx = lo + np.argmin(depth[lo : e + 1])
         else:
             continue
         phase[idx] = _SURFACING if depth[idx] <= surfacing_depth_threshold else _INFLECTION
@@ -488,8 +539,13 @@ def _classify_profiles(df_raw, depth_col, transect_phase=_PARKING):
         smoothed_velocity, time_seconds, chunk_id, PROF_VELOCITY_THRESH, PROF_MIN_DURATION_SEC
     )
     _prof_classify_propelled_surfacing(
-        phase, depth, time_seconds, chunk_id,
-        PROF_SURFACING_DEPTH_THRESHOLD, PROF_MIN_DURATION_SEC, PROF_MIN_TRANSECT_DURATION_SEC,
+        phase,
+        depth,
+        time_seconds,
+        chunk_id,
+        PROF_SURFACING_DEPTH_THRESHOLD,
+        PROF_MIN_DURATION_SEC,
+        PROF_MIN_TRANSECT_DURATION_SEC,
         transect_phase,
     )
     _prof_classify_inflection(phase, depth, chunk_id, PROF_SURFACING_DEPTH_THRESHOLD)
@@ -529,7 +585,11 @@ def _classify_profiles(df_raw, depth_col, transect_phase=_PARKING):
 
 
 def _compute_profiles(filepath, log, names, existing, time_var):
-    wanted = [n for n in ("SCI_PHASE", "PROFILE_NUMBER", "PROFILE_DIRECTION", "CYCLE", "PROFILE_GRADIENT") if n not in existing]
+    wanted = [
+        n
+        for n in ("SCI_PHASE", "PROFILE_NUMBER", "PROFILE_DIRECTION", "CYCLE", "PROFILE_GRADIENT")
+        if n not in existing
+    ]
     if not wanted or not time_var:
         return [], {}, {}
 
@@ -588,7 +648,8 @@ def _compute_profiles(filepath, log, names, existing, time_var):
         if qc_name not in existing:
             arrays[qc_name] = np.where(mapped_mask, 1, 9).astype(np.int8)
             meta[qc_name] = {
-                "units": "1", "type": "numeric",
+                "units": "1",
+                "type": "numeric",
                 "description": f"Quality flag for {name} (1=good, 9=missing; derived)",
             }
 
@@ -617,9 +678,9 @@ def _compute_backscatter(filepath, log, names, existing, time_var):
 
     # Find every raw beta variable (e.g. BETA_BACKSCATTERING532/700). Each distinct
     # wavelength becomes its own BBP product.
-    beta_vars = [n for n in names
-                 if "BETA" in n.upper() and "BACKSCATTER" in n.upper()
-                 and not n.upper().endswith("_QC")]
+    beta_vars = [
+        n for n in names if "BETA" in n.upper() and "BACKSCATTER" in n.upper() and not n.upper().endswith("_QC")
+    ]
     if not beta_vars:
         return [], {}, {}
 
@@ -627,7 +688,7 @@ def _compute_backscatter(filepath, log, names, existing, time_var):
     if not data:
         return [], {}, {}
 
-    CHI = 1.076                         # chi factor for a ~124° backscatter sensor
+    CHI = 1.076  # chi factor for a ~124° backscatter sensor
 
     wanted, arrays, meta = [], {}, {}
     for beta_var in beta_vars:
@@ -643,7 +704,7 @@ def _compute_backscatter(filepath, log, names, existing, time_var):
         if base in arrays or base in existing:
             continue
 
-        bbp = 2.0 * np.pi * CHI * beta      # m-1.sr-1 * sr -> m-1
+        bbp = 2.0 * np.pi * CHI * beta  # m-1.sr-1 * sr -> m-1
 
         # Despike: sample-count rolling median baseline, spikes = signal - baseline.
         s = pd.Series(bbp)
@@ -670,7 +731,8 @@ def _compute_backscatter(filepath, log, names, existing, time_var):
             if qc_name not in existing:
                 arrays[qc_name] = np.where(np.isfinite(arr), 1, 9).astype(np.int8)
                 meta[qc_name] = {
-                    "units": "1", "type": "numeric",
+                    "units": "1",
+                    "type": "numeric",
                     "description": f"Quality flag for {name} (1=good, 9=missing; derived)",
                 }
 
@@ -681,13 +743,17 @@ def _compute_backscatter(filepath, log, names, existing, time_var):
 # Master Entry Point
 # ---------------------------------------------------------------------------
 
+
 def derive_all_extra_variables(filepath, log_cb=None):
-    """Entry point to calculate all CTD and profile variables at once, 
+    """Entry point to calculate all CTD and profile variables at once,
     saving to the derived store in a single operation."""
+
     def log(msg):
         if log_cb:
-            try: log_cb(msg)
-            except Exception: pass
+            try:
+                log_cb(msg)
+            except Exception:
+                pass
 
     # A previous run's derived variables would otherwise count as already in the file and be skipped.
     plot_logic.clear_derived(filepath)
@@ -697,7 +763,7 @@ def derive_all_extra_variables(filepath, log_cb=None):
 
     existing = set(names)
     time_var = _resolve_time_var(names)
-    
+
     all_wanted = []
     all_arrays = {}
     all_meta = {}

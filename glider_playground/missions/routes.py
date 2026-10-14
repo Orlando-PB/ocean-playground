@@ -1,4 +1,5 @@
 """HTTP surface of the missions package: /api/missions/* and the static mission pages under /missions/static."""
+
 import json
 import tempfile
 from pathlib import Path
@@ -29,8 +30,11 @@ def _local_only() -> None:
 
 @router.get("")
 def api_missions():
-    return {"missions": mission_logic.list_missions(), "local": not server_config.IS_SERVER,
-            "live_status": live_logic.status()}
+    return {
+        "missions": mission_logic.list_missions(),
+        "local": not server_config.IS_SERVER,
+        "live_status": live_logic.status(),
+    }
 
 
 @router.get("/template")
@@ -80,12 +84,19 @@ def api_mission_export(mission_id: str, data: bool = False):
     m = _mission(mission_id)
     if not data:
         body = json.dumps(m, indent=2, ensure_ascii=False)
-        return Response(body, media_type="application/json",
-                        headers={"Content-Disposition": f'attachment; filename="{m["id"]}.mission.json"'})
+        return Response(
+            body,
+            media_type="application/json",
+            headers={"Content-Disposition": f'attachment; filename="{m["id"]}.mission.json"'},
+        )
     tmp = Path(tempfile.mkstemp(suffix=".mission.zip")[1])
     bundle.pack(m["id"], str(tmp))
-    return FileResponse(tmp, media_type="application/zip", filename=f'{m["id"]}.mission.zip',
-                        background=BackgroundTask(tmp.unlink, missing_ok=True))
+    return FileResponse(
+        tmp,
+        media_type="application/zip",
+        filename=f"{m['id']}.mission.zip",
+        background=BackgroundTask(tmp.unlink, missing_ok=True),
+    )
 
 
 @router.post("/import")
@@ -101,7 +112,11 @@ async def api_mission_import(file: UploadFile = File(...)):
     try:
         if (file.filename or "").lower().endswith(".json"):
             stem = Path(file.filename).name.lower().removesuffix(".json").removesuffix(".mission")
-            return {"status": "success", "mission": bundle.save_json(json.loads(tmp.read_text(encoding="utf-8")), stem), "files": []}
+            return {
+                "status": "success",
+                "mission": bundle.save_json(json.loads(tmp.read_text(encoding="utf-8")), stem),
+                "files": [],
+            }
         return {"status": "success", **bundle.import_zip(tmp)}
     except Exception as e:  # noqa: BLE001
         return {"status": "error", "message": str(e)}
@@ -110,7 +125,7 @@ async def api_mission_import(file: UploadFile = File(...)):
 
 
 pages = APIRouter()
-_app = None        # set in attach(): /missions URLs are answered by the app's own "/" handler (the normal shell)
+_app = None  # set in attach(): /missions URLs are answered by the app's own "/" handler (the normal shell)
 
 
 @pages.get("/missions", include_in_schema=False)

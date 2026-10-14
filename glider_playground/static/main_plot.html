@@ -660,7 +660,7 @@
             p.set('x_var', cVar);
             p.set('highlight_profile', 'true');
             p.set('max_points', '2500');
-            ['multiview', 'theme', 'profile_sidebar', 'zXmin', 'zXmax', 'zYmin', 'zYmax'].forEach(k => p.delete(k));
+            ['multiview', 'theme', 'profile_sidebar'].forEach(k => p.delete(k));
 
             // When zoomed, pass the main x_var + numeric bounds (epoch-ms for dates) so the
             // server flags in-view points via `in_selection`.
@@ -835,6 +835,17 @@
             // urlParams: the URL query on first load, or the 'replot' message's params.
             if (!urlParams.toString()) return;
 
+            // A saved zoom (kept across a filter change) is read once into _currentZoom, then dropped from
+            // urlParams so a later zoom-out goes back to the full extent instead of re-applying it.
+            const zoomKeys = ['zXmin', 'zXmax', 'zYmin', 'zYmax'];
+            const hasSavedZoom = zoomKeys.every(k => urlParams.has(k));
+            const [zx0, zx1, zy0, zy1] = zoomKeys.map(k => Number(urlParams.get(k)));
+            zoomKeys.forEach(k => urlParams.delete(k));
+            if (hasSavedZoom && [zx0, zx1, zy0, zy1].every(isFinite)) {
+                _currentZoom = { xMin: Math.min(zx0, zx1), xMax: Math.max(zx0, zx1),
+                                 yMin: Math.min(zy0, zy1), yMax: Math.max(zy0, zy1) };
+            }
+
             const now = () => performance.timeOrigin + performance.now();
             try {
                 // Strip our timing params before forwarding to the API.
@@ -951,7 +962,7 @@
                     // Log the request's data-affecting params so a sparse plot shows why.
                     const FILTER_KEYS = ['x_var','y_var','c_var','qc_flags',
                         'profile_num','cycle_num','cycle_var','sci_phases','direction_filter',
-                        'zXmin','zXmax','zYmin','zYmax','max_points'];
+                        'max_points'];
                     const reqDetail = 'req: ' + FILTER_KEYS
                         .filter(k => apiParams.has(k) && apiParams.get(k) !== '' && apiParams.get(k) !== 'false')
                         .map(k => `${k}=${apiParams.get(k)}`).join('  ');
@@ -961,17 +972,10 @@
 
                 // Loaded straight into a saved zoom: no plotly_relayout fires, so drive the
                 // high-res in-bounds fetch explicitly.
-                if (urlParams.has('zXmin') && urlParams.has('zXmax') &&
-                    urlParams.has('zYmin') && urlParams.has('zYmax')) {
-                    let zx0 = Number(urlParams.get('zXmin')), zx1 = Number(urlParams.get('zXmax'));
-                    let zy0 = Number(urlParams.get('zYmin')), zy1 = Number(urlParams.get('zYmax'));
-                    if (!isNaN(zx0) && !isNaN(zx1) && !isNaN(zy0) && !isNaN(zy1)) {
-                        if (zx0 > zx1) { const t = zx0; zx0 = zx1; zx1 = t; }
-                        if (zy0 > zy1) { const t = zy0; zy0 = zy1; zy1 = t; }
-                        _currentZoom = { xMin: zx0, xMax: zx1, yMin: zy0, yMax: zy1 };
-                        setZoomHint(true);
-                        triggerBgFetch(zx0, zx1, zy0, zy1);
-                    }
+                if (_currentZoom) {
+                    const z = _currentZoom;
+                    setZoomHint(true);
+                    triggerBgFetch(z.xMin, z.xMax, z.yMin, z.yMax);
                 }
 
                 const overlay = document.getElementById('overlay');
@@ -1069,12 +1073,6 @@
             if (xRange) {
                 layout.xaxis.range = xRange;
                 layout.xaxis.autorange = false;
-            } else if (urlParams.has('zXmin') && urlParams.has('zXmax')) {
-                // Saved date-axis zoom bounds arrive as epoch-ms strings; coerce to numbers
-                // (converted to naive-UTC strings below).
-                const zx0 = urlParams.get('zXmin'), zx1 = urlParams.get('zXmax');
-                layout.xaxis.range = isXDate ? [Number(zx0), Number(zx1)] : [zx0, zx1];
-                layout.xaxis.autorange = false;
             } else if (isXDate && (_unionRange || (urlParams.has('xr0') && urlParams.has('xr1')))) {
                 // Synced full extent: the union the shell last drove (exact), else its estimate from the URL
                 // (epoch-ms) — so the first draw and a zoom-out land aligned instead of moving afterwards.
@@ -1100,11 +1098,6 @@
 
             if (yRange) {
                 layout.yaxis.range = isInverted ? [yRange[1], yRange[0]] : yRange;
-                layout.yaxis.autorange = false;
-            } else if (urlParams.has('zYmin') && urlParams.has('zYmax')) {
-                const zYmin = urlParams.get('zYmin');
-                const zYmax = urlParams.get('zYmax');
-                layout.yaxis.range = isInverted ? [zYmax, zYmin] : [zYmin, zYmax];
                 layout.yaxis.autorange = false;
             } else if (!plotData.lines) {
                 const yMin = getSafeMin(plotData.y), yMax = getSafeMax(plotData.y);
@@ -1348,7 +1341,8 @@
 
             // `marks.tBuilt` is read by initPlot's build+draw timing split.
             const traces = createTraces(plotData);
-            const layout = buildLayout(null, null);
+            const zoom = _currentZoom;
+            const layout = buildLayout(zoom ? [zoom.xMin, zoom.xMax] : null, zoom ? [zoom.yMin, zoom.yMax] : null);
             if (marks) marks.tBuilt = performance.timeOrigin + performance.now();
 
             // Reserve the colour-bar / sidebar strip BEFORE the first draw so Plotly paints once into the final box.

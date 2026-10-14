@@ -33,7 +33,7 @@ MAX_POINTS = 5000
 # mostly sharpens dive shapes and pitch/roll changes. Separate cache entry.
 MAX_POINTS_3D = 20000
 GEO_GAP_THRESHOLD_KM = 100.0
-GEO_GAP_THRESHOLD_SEC = 2 * 86400.0   # 2 days
+GEO_GAP_THRESHOLD_SEC = 2 * 86400.0  # 2 days
 GEO_GROUP_MIN_POINTS = 100
 
 # Position variable names in priority order. Some files lack the OG1 standard
@@ -54,17 +54,18 @@ def _resolve_latlon_names(container):
     lon = next((n for n in LON_NAMES if n in container), None)
     return lat, lon
 
+
 # Depth-averaged current (DAC). Gliders log one current estimate per dive
 # (the dead-reckoning correction), so these arrays are sparse along the full
 # record. Source variable pairs are tried in priority order; the third value
 # scales the file's units to m/s.
 DAC_VARIABLE_SETS = (
-    ("WATER_VELOC_FINAL_U", "WATER_VELOC_FINAL_V", 1.0),    # m/s, surface-drift corrected
-    ("WATERCURRENTS_U", "WATERCURRENTS_V", 0.01),           # cm/s -> m/s
+    ("WATER_VELOC_FINAL_U", "WATER_VELOC_FINAL_V", 1.0),  # m/s, surface-drift corrected
+    ("WATERCURRENTS_U", "WATERCURRENTS_V", 0.01),  # cm/s -> m/s
 )
 DAC_MAX_VECTORS = 300
 DAC_MAX_SPEED_MS = 5.0  # anything faster than this is a bad fix, not a real current
-DAC_MATCH_MAX_SEC = 3600.0      # skip a current if no GPS fix within 1 h of it
+DAC_MATCH_MAX_SEC = 3600.0  # skip a current if no GPS fix within 1 h of it
 DAC_MIN_INTERVAL_SEC = 6 * 3600.0  # thin to at most one arrow per ~6 h
 
 # Set by cache_logic during prewarm to report sub-steps in real time.
@@ -80,6 +81,7 @@ def _report_spatial_stage(msg: str):
 
 
 # ---------- Geographic outlier ----------
+
 
 def _trim_position_outliers(lat, lon, times=None):
     """Drop isolated stray fixes while keeping the whole real track.
@@ -131,19 +133,19 @@ def _trim_position_outliers(lat, lon, times=None):
 
     return valid
 
+
 # ---------- Bathymetry ----------
 
 # The seabed comes from coastwatch; when that doesn't answer, from NOAA PIFSC's copy of ETOPO 2022.
 BATHY_PRIMARY = "https://coastwatch.pfeg.noaa.gov/erddap/griddap"
 BATHY_BACKUP = "https://oceanwatch.pifsc.noaa.gov/erddap/griddap"
-BATHY_PRIMARY_RETRY_SEC = 600     # after coastwatch fails, go straight to the backup for this long
+BATHY_PRIMARY_RETRY_SEC = 600  # after coastwatch fails, go straight to the backup for this long
 _bathy_primary_down_until = 0.0
 
 
 def _bathy_url(base, dataset, var, lat0, lat1, lon0, lon1, stride):
     # .nc rather than .csv: the same grid at a tenth of the bytes, and no text to parse.
-    return (f"{base}/{dataset}.nc?{var}[({lat0:.4f}):{stride}:({lat1:.4f})]"
-            f"[({lon0:.4f}):{stride}:({lon1:.4f})]")
+    return f"{base}/{dataset}.nc?{var}[({lat0:.4f}):{stride}:({lat1:.4f})][({lon0:.4f}):{stride}:({lon1:.4f})]"
 
 
 def _fetch_bathy_nc(url, var):
@@ -225,6 +227,7 @@ def fetch_bathy_grid(bounds: dict, grid: int, fine: bool = True) -> dict:
 
 # ---------- Core data path ----------
 
+
 def _to_float_array(arr):
     if np.ma.isMaskedArray(arr):
         # Cast to float *before* filling so integer-typed masked arrays (e.g.
@@ -235,7 +238,7 @@ def _to_float_array(arr):
 
 def _read_lat_lon_pres_temp(filepath):
     """Read LAT/LON/PRES/TEMP as plain float arrays, via the shared var-read cache."""
-    needed = list(LAT_NAMES) + list(LON_NAMES) + ['PRES', 'TEMP']
+    needed = list(LAT_NAMES) + list(LON_NAMES) + ["PRES", "TEMP"]
     arrs = _read_named_arrays(filepath, needed)
     lat_name, lon_name = _resolve_latlon_names(arrs)
     if lat_name is None or lon_name is None:
@@ -244,8 +247,8 @@ def _read_lat_lon_pres_temp(filepath):
         raise ValueError("No LATITUDE/LONGITUDE in this file")
     lat = arrs[lat_name]
     lon = arrs[lon_name]
-    pres = arrs.get('PRES', np.zeros_like(lat))
-    temp = arrs.get('TEMP')
+    pres = arrs.get("PRES", np.zeros_like(lat))
+    temp = arrs.get("TEMP")
     return lat, lon, pres, temp
 
 
@@ -273,21 +276,21 @@ def _read_track_times(filepath):
     caller ever hands this a raw (already-numeric) time array.
     """
     try:
-        result = plot_logic._read_vars_cached(filepath, ('TIME', 'TIME_GPS')) or {}
+        result = plot_logic._read_vars_cached(filepath, ("TIME", "TIME_GPS")) or {}
     except Exception:
         return None
-    raw = result.get('TIME')
+    raw = result.get("TIME")
     if raw is None:
-        raw = result.get('TIME_GPS')
+        raw = result.get("TIME_GPS")
     if raw is None:
         return None
 
     if np.ma.isMaskedArray(raw):
-        raw = np.ma.filled(raw.astype('float64') if not np.issubdtype(raw.dtype, np.datetime64) else raw, np.nan)
+        raw = np.ma.filled(raw.astype("float64") if not np.issubdtype(raw.dtype, np.datetime64) else raw, np.nan)
     raw = np.asarray(raw)
     if np.issubdtype(raw.dtype, np.datetime64):
-        dt = raw.astype('datetime64[ns]')
-        sec = dt.astype('int64').astype(float) / 1e9
+        dt = raw.astype("datetime64[ns]")
+        sec = dt.astype("int64").astype(float) / 1e9
         sec[np.isnat(dt)] = np.nan
         return sec
     # netCDF4 path: CF "seconds since 1970-01-01" — already epoch seconds.
@@ -343,8 +346,11 @@ def get_dac_vectors(filepath):
 
     # Current estimates: finite, physically plausible, not QC-flagged bad.
     cur_ok = (
-        np.isfinite(u) & np.isfinite(v) & np.isfinite(times)
-        & (np.abs(u) < DAC_MAX_SPEED_MS) & (np.abs(v) < DAC_MAX_SPEED_MS)
+        np.isfinite(u)
+        & np.isfinite(v)
+        & np.isfinite(times)
+        & (np.abs(u) < DAC_MAX_SPEED_MS)
+        & (np.abs(v) < DAC_MAX_SPEED_MS)
     )
     # Drop only samples explicitly flagged bad (QC 3/4/9); keep 0 ("not
     # evaluated", which is how these files mark every DAC) and good flags.
@@ -354,10 +360,7 @@ def get_dac_vectors(filepath):
             cur_ok &= ~np.isin(q[:n], BAD_QC)
 
     # GPS fixes: finite, in range, timestamped.
-    fix_ok = (
-        np.isfinite(lat) & np.isfinite(lon) & np.isfinite(times)
-        & (np.abs(lat) <= 90.0) & (np.abs(lon) <= 180.0)
-    )
+    fix_ok = np.isfinite(lat) & np.isfinite(lon) & np.isfinite(times) & (np.abs(lat) <= 90.0) & (np.abs(lon) <= 180.0)
 
     cur_idx = np.where(cur_ok)[0]
     fix_idx = np.where(fix_ok)[0]
@@ -398,7 +401,7 @@ def get_dac_vectors(filepath):
             last_t = ct_s[j]
     sel = order_t[keep]  # ascending time, oldest first
 
-    if sel.size > DAC_MAX_VECTORS:        # safety cap, keep the most recent
+    if sel.size > DAC_MAX_VECTORS:  # safety cap, keep the most recent
         sel = sel[-DAC_MAX_VECTORS:]
 
     return [
@@ -454,15 +457,19 @@ def get_core_spatial_data(filepath, max_points=MAX_POINTS):
         times = None
 
     _report_spatial_stage("spatial QC: interpolating coordinate gaps")
-    lat = pd.Series(lat).interpolate(limit_direction='both').to_numpy()
-    lon = pd.Series(lon).interpolate(limit_direction='both').to_numpy()
+    lat = pd.Series(lat).interpolate(limit_direction="both").to_numpy()
+    lon = pd.Series(lon).interpolate(limit_direction="both").to_numpy()
 
     _report_spatial_stage("spatial QC: range & fill-value filter")
     FILL_VALUES = np.array([-999.0, -9999.0, 999.0, 9999.0])
     valid = (
-        ~np.isnan(lat) & ~np.isnan(lon) & ~np.isnan(pres)
-        & (lat >= -90.0) & (lat <= 90.0)
-        & (lon >= -180.0) & (lon <= 180.0)
+        ~np.isnan(lat)
+        & ~np.isnan(lon)
+        & ~np.isnan(pres)
+        & (lat >= -90.0)
+        & (lat <= 90.0)
+        & (lon >= -180.0)
+        & (lon <= 180.0)
         & ~np.isin(lat, FILL_VALUES)
         & ~np.isin(lon, FILL_VALUES)
     )
@@ -514,20 +521,24 @@ def get_core_spatial_data(filepath, max_points=MAX_POINTS):
 
 # ---------- API payloads ----------
 
+
 def get_location_summary(filepath):
     try:
         lat, lon, _pres, _temp, _times = get_core_spatial_data(filepath)
     except Exception as e:
         return {"error": str(e)}
     return {
-        "lat_min": float(np.min(lat)), "lat_max": float(np.max(lat)),
-        "lon_min": float(np.min(lon)), "lon_max": float(np.max(lon)),
-        "lat_center": float(np.mean(lat)), "lon_center": float(np.mean(lon)),
+        "lat_min": float(np.min(lat)),
+        "lat_max": float(np.max(lat)),
+        "lon_min": float(np.min(lon)),
+        "lon_max": float(np.max(lon)),
+        "lat_center": float(np.mean(lat)),
+        "lon_center": float(np.mean(lon)),
         "n_points": int(len(lat)),
     }
 
 
-_TIME_EXTENT = {}   # (path, size, mtime) -> (first_iso, last_iso)
+_TIME_EXTENT = {}  # (path, size, mtime) -> (first_iso, last_iso)
 
 
 def get_time_extent_iso(filepath):
@@ -537,6 +548,7 @@ def get_time_extent_iso(filepath):
     shell can pre-align synced time axes to the range the plots will report.
     """
     import pandas as pd
+
     try:
         st = os.stat(filepath)
         key = (filepath, st.st_size, st.st_mtime)
@@ -548,14 +560,14 @@ def get_time_extent_iso(filepath):
     pre = plot_logic._get_preloaded(filepath)
     time_arr = None
     if pre is not None:
-        for k in ('TIME', 'TIME_GPS'):
+        for k in ("TIME", "TIME_GPS"):
             if k in pre:
                 time_arr = pre[k]
                 break
     if time_arr is None:
         try:
-            with plot_logic.NETCDF_LOCK, Dataset(filepath, 'r') as nc:
-                for k in ('TIME', 'TIME_GPS'):
+            with plot_logic.NETCDF_LOCK, Dataset(filepath, "r") as nc:
+                for k in ("TIME", "TIME_GPS"):
                     if k in nc.variables:
                         time_arr = nc.variables[k][:]
                         break
@@ -567,11 +579,14 @@ def get_time_extent_iso(filepath):
             # Preloaded TIME is datetime64; raw netCDF TIME is CF epoch seconds. Naive UTC for the mask
             # (tz-aware -> datetime64 warns); the offset goes back on for the shell.
             arr = np.ma.filled(time_arr, np.nan) if np.ma.isMaskedArray(time_arr) else np.asarray(time_arr)
-            ts = (pd.to_datetime(arr, errors='coerce') if np.issubdtype(arr.dtype, np.datetime64)
-                  else pd.to_datetime(arr.astype(float), unit='s', errors='coerce'))
+            ts = (
+                pd.to_datetime(arr, errors="coerce")
+                if np.issubdtype(arr.dtype, np.datetime64)
+                else pd.to_datetime(arr.astype(float), unit="s", errors="coerce")
+            )
             ts = ts[plot_logic._hard_time_valid_mask(ts)]
             if len(ts):
-                out = (ts.min().isoformat() + '+00:00', ts.max().isoformat() + '+00:00')
+                out = (ts.min().isoformat() + "+00:00", ts.max().isoformat() + "+00:00")
     except Exception:
         out = (None, None)
     if len(_TIME_EXTENT) > 512:
@@ -587,17 +602,18 @@ def get_last_time_iso(filepath):
     is recent enough that the glider is presumably still in the water.
     """
     import pandas as pd
+
     pre = plot_logic._get_preloaded(filepath)
     time_arr = None
     if pre is not None:
-        for k in ('TIME', 'TIME_GPS'):
+        for k in ("TIME", "TIME_GPS"):
             if k in pre:
                 time_arr = pre[k]
                 break
     if time_arr is None:
         try:
-            with plot_logic.NETCDF_LOCK, Dataset(filepath, 'r') as nc:
-                for k in ('TIME', 'TIME_GPS'):
+            with plot_logic.NETCDF_LOCK, Dataset(filepath, "r") as nc:
+                for k in ("TIME", "TIME_GPS"):
                     if k in nc.variables:
                         time_arr = nc.variables[k][:]
                         break
@@ -606,7 +622,7 @@ def get_last_time_iso(filepath):
     if time_arr is None or len(time_arr) == 0:
         return None
     try:
-        ts = pd.to_datetime(time_arr, errors='coerce', utc=True)
+        ts = pd.to_datetime(time_arr, errors="coerce", utc=True)
         ts = ts[~pd.isna(ts)]
         if len(ts) == 0:
             return None
@@ -696,8 +712,7 @@ def get_nearest_fix_by_coord(filepath, lat_q, lon_q):
         "lat": float(lat[j]),
         "lon": float(lon[j]),
         "time": float(times[j]) * 1000.0,
-        "dist_km": float(np.hypot(
-            (lon[j] - lon_q) * cos_lat, lat[j] - lat_q) * 111.195),
+        "dist_km": float(np.hypot((lon[j] - lon_q) * cos_lat, lat[j] - lat_q) * 111.195),
     }
 
 
@@ -731,6 +746,7 @@ _KMZ_YELLOW = "ff00d5ff"  # KML aabbggrr — solid yellow, matches the app's tra
 
 def _kml_time(epoch_s):
     from datetime import datetime, timezone
+
     return datetime.fromtimestamp(float(epoch_s), tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
@@ -770,7 +786,7 @@ def generate_kmz(filepath, name):
             i0, i1 = int(bounds[k]), int(bounds[k + 1])
             if i1 <= i0:
                 continue
-            seg_t = times[i0:i1 + 1]
+            seg_t = times[i0 : i1 + 1]
             seg_t = seg_t[np.isfinite(seg_t)]
             timespan = f"<TimeSpan><begin>{_kml_time(seg_t.min())}</begin></TimeSpan>" if len(seg_t) else ""
             coords = "\n".join(coord(i) for i in range(i0, i1 + 1))
@@ -850,8 +866,9 @@ def generate_3d_data(filepath):
     try:
         idx = get_core_spatial_index(filepath, MAX_POINTS_3D)
         if idx is not None and len(idx) == len(lat):
-            arrs = _read_named_arrays(filepath, ['GLIDER_PITCH', 'PITCH', 'GLIDER_ROLL', 'ROLL',
-                                                 'GLIDER_HEADING', 'HEADING'])
+            arrs = _read_named_arrays(
+                filepath, ["GLIDER_PITCH", "PITCH", "GLIDER_ROLL", "ROLL", "GLIDER_HEADING", "HEADING"]
+            )
             units = plot_logic._get_var_units(filepath)
 
             def _first(*names):
@@ -865,11 +882,10 @@ def generate_3d_data(filepath):
             # "deg" while holding radians. A glider's pitch is tens of degrees,
             # so a file whose |pitch| never exceeds ~pi/2 is in radians - and
             # roll/heading come from the same sensor block, so they follow it.
-            p_name, p_raw = _first('GLIDER_PITCH', 'PITCH')
+            p_name, p_raw = _first("GLIDER_PITCH", "PITCH")
             is_rad = False
             if p_raw is not None:
-                is_rad = ('rad' in str(units.get(p_name, '')).lower()
-                          or np.nanpercentile(np.abs(p_raw), 99) < 1.6)
+                is_rad = "rad" in str(units.get(p_name, "")).lower() or np.nanpercentile(np.abs(p_raw), 99) < 1.6
                 p_raw_deg = np.degrees(p_raw) if is_rad else p_raw
 
             # Real-time files carry attitude only every few minutes, with gaps
@@ -878,8 +894,7 @@ def generate_3d_data(filepath):
             # samples that are both within ATT_MAX_GAP_S of it.
             ATT_MAX_GAP_S = 600.0
             tfull = _read_track_times(filepath)
-            have_t = (tfull is not None and len(tfull) > idx.max()
-                      and times is not None and len(times) == len(idx))
+            have_t = tfull is not None and len(tfull) > idx.max() and times is not None and len(times) == len(idx)
 
             def _attitude(*names, circular=False):
                 nm, a = _first(*names)
@@ -898,35 +913,36 @@ def generate_3d_data(filepath):
                     v = np.interp(idx, ok, a[ok])
                 trusted = np.ones(len(idx), dtype=bool)
                 if have_t:
-                    k = np.searchsorted(ok, idx)               # next sample at/after each track row
+                    k = np.searchsorted(ok, idx)  # next sample at/after each track row
                     lo = ok[np.clip(k - 1, 0, len(ok) - 1)]
                     hi = ok[np.clip(k, 0, len(ok) - 1)]
-                    with np.errstate(invalid='ignore'):
-                        trusted = ((np.abs(times - tfull[lo]) <= ATT_MAX_GAP_S)
-                                   & (np.abs(tfull[hi] - times) <= ATT_MAX_GAP_S))
+                    with np.errstate(invalid="ignore"):
+                        trusted = (np.abs(times - tfull[lo]) <= ATT_MAX_GAP_S) & (
+                            np.abs(tfull[hi] - times) <= ATT_MAX_GAP_S
+                        )
                 return v, trusted
 
             def _out(v):
                 return [None if not np.isfinite(x) else round(float(x), 2) for x in v]
 
-            pv, pt = _attitude('GLIDER_PITCH', 'PITCH')
+            pv, pt = _attitude("GLIDER_PITCH", "PITCH")
             if pv is not None:
                 # Away from trusted samples: the file's typical dive/climb angle,
                 # signed by the vertical speed of the track (level when hovering).
                 typ_down = np.nanmedian(np.abs(p_raw_deg[p_raw_deg < -5])) if (p_raw_deg < -5).any() else 20.0
                 typ_up = np.nanmedian(np.abs(p_raw_deg[p_raw_deg > 5])) if (p_raw_deg > 5).any() else 20.0
                 if have_t:
-                    with np.errstate(invalid='ignore', divide='ignore'):
-                        w = np.gradient(np.asarray(pres, dtype=float), times)   # m/s, +ve sinking
+                    with np.errstate(invalid="ignore", divide="ignore"):
+                        w = np.gradient(np.asarray(pres, dtype=float), times)  # m/s, +ve sinking
                 else:
                     w = np.gradient(np.asarray(pres, dtype=float)) * np.inf
                 w = np.nan_to_num(w, nan=0.0, posinf=1.0, neginf=-1.0)
                 est = np.where(w > 0.02, -typ_down, np.where(w < -0.02, typ_up, 0.0))
                 pitch = _out(np.where(pt, pv, est))
-            rv, rt = _attitude('GLIDER_ROLL', 'ROLL')
+            rv, rt = _attitude("GLIDER_ROLL", "ROLL")
             if rv is not None:
                 roll = _out(np.where(rt, rv, 0.0))
-            hv, ht = _attitude('GLIDER_HEADING', 'HEADING', circular=True)
+            hv, ht = _attitude("GLIDER_HEADING", "HEADING", circular=True)
             if hv is not None:
                 # Heading is held between surfacings, so bridge compass gaps (switching to track direction made
                 # the model snap) and smooth with a circular mean.
@@ -934,8 +950,8 @@ def generate_3d_data(filepath):
                 win = max(3, min(41, (len(hv) // 500) | 1))
                 ker = np.hanning(win + 2)[1:-1]
                 ker /= ker.sum()
-                sn = np.convolve(np.pad(np.sin(r), win // 2, mode='edge'), ker, mode='valid')
-                cs = np.convolve(np.pad(np.cos(r), win // 2, mode='edge'), ker, mode='valid')
+                sn = np.convolve(np.pad(np.sin(r), win // 2, mode="edge"), ker, mode="valid")
+                cs = np.convolve(np.pad(np.cos(r), win // 2, mode="edge"), ker, mode="valid")
                 heading = _out(np.degrees(np.arctan2(sn, cs)) % 360)
     except Exception:
         pitch = roll = heading = None
@@ -945,8 +961,10 @@ def generate_3d_data(filepath):
     lon_pad = (max_lon - min_lon) * 0.15 or 0.1
     lat_pad = (max_lat - min_lat) * 0.15 or 0.1
     bounds = {
-        "min_lon": min_lon - lon_pad, "max_lon": max_lon + lon_pad,
-        "min_lat": min_lat - lat_pad, "max_lat": max_lat + lat_pad,
+        "min_lon": min_lon - lon_pad,
+        "max_lon": max_lon + lon_pad,
+        "min_lat": min_lat - lat_pad,
+        "max_lat": max_lat + lat_pad,
     }
 
     return {
@@ -964,7 +982,8 @@ def generate_3d_data(filepath):
 
 # ---------- Track colour (3D view / missions) ----------
 
-TRACK_COLOUR_MAX_GAP = 40      # track points (of ~20k per file) a missing colour value may be interpolated across
+TRACK_COLOUR_MAX_GAP = 40  # track points (of ~20k per file) a missing colour value may be interpolated across
+
 
 def _track_colour_presets(filepath):
     """Presets usable as a 3D track colour for this file: time-section presets with a continuous palette whose
@@ -985,10 +1004,13 @@ def _track_colour_presets(filepath):
 
 
 def track_colour_options(filepath) -> list:
-    return [{"key": k, "label": p.get("label", k), "var": v, "cmap": p.get("cmap")} for k, p, v in _track_colour_presets(filepath)]
+    return [
+        {"key": k, "label": p.get("label", k), "var": v, "cmap": p.get("cmap")}
+        for k, p, v in _track_colour_presets(filepath)
+    ]
 
 
-_track_colour_cache = {}       # (path, size, mtime, var) -> result sans preset fields; small, newest kept
+_track_colour_cache = {}  # (path, size, mtime, var) -> result sans preset fields; small, newest kept
 _TRACK_COLOUR_CACHE_MAX = 24
 
 
@@ -1005,7 +1027,12 @@ def track_colour(filepath, preset_key=None, var=None, cmap=None) -> dict:
         if not var or var not in set(plot_logic._get_var_names(filepath) or []):
             return {"error": "Not available for this file"}
         preset = {"label": var, "cmap": cmap}
-    head = {"preset": preset_key or "", "label": preset.get("label", var), "var": var, "cmap": cmap or preset.get("cmap")}
+    head = {
+        "preset": preset_key or "",
+        "label": preset.get("label", var),
+        "var": var,
+        "cmap": cmap or preset.get("cmap"),
+    }
     discrete = str(head["cmap"] or "").startswith("discrete")
     try:
         st = os.stat(filepath)
@@ -1030,12 +1057,17 @@ def _track_colour_values(filepath, var, discrete=False) -> dict:
     if raw is None or raw.dtype.kind not in "fiu" or len(raw) <= int(idx.max()):
         return {"error": "Not available for this file"}
     idx = np.asarray(idx, dtype=np.int64)
-    if discrete:                   # integer flags (0-9): the point's own sample, never a mean
+    if discrete:  # integer flags (0-9): the point's own sample, never a mean
         vals = raw[idx].astype(float)
         vals[~((vals >= 0) & (vals <= 9))] = np.nan
-        return {"discrete": True, "units": "", "cmin": 0.0, "cmax": 9.0,
-                "values": [None if not np.isfinite(v) else int(round(v)) for v in vals]}
-    edges = np.concatenate(([0], (idx[:-1] + idx[1:]) // 2 + 1))          # each point owns the rows nearest to it
+        return {
+            "discrete": True,
+            "units": "",
+            "cmin": 0.0,
+            "cmax": 9.0,
+            "values": [None if not np.isfinite(v) else int(round(v)) for v in vals],
+        }
+    edges = np.concatenate(([0], (idx[:-1] + idx[1:]) // 2 + 1))  # each point owns the rows nearest to it
     ok = np.isfinite(raw)
     sums = np.add.reduceat(np.where(ok, raw, 0.0), edges)
     counts = np.add.reduceat(ok.astype(np.int64), edges)
@@ -1048,10 +1080,15 @@ def _track_colour_values(filepath, var, discrete=False) -> dict:
         pos = np.arange(vals.size)
         nxt = np.searchsorted(good, pos, side="left").clip(0, good.size - 1)
         prv = (np.searchsorted(good, pos, side="right") - 1).clip(0, good.size - 1)
-        bridge = ~np.isfinite(vals) & (good[nxt] - good[prv] <= TRACK_COLOUR_MAX_GAP) & (good[nxt] > pos) & (good[prv] < pos)
+        bridge = (
+            ~np.isfinite(vals) & (good[nxt] - good[prv] <= TRACK_COLOUR_MAX_GAP) & (good[nxt] > pos) & (good[prv] < pos)
+        )
         vals[bridge] = np.interp(pos[bridge], good, vals[good])
     finite = vals[np.isfinite(vals)]
-    lo, hi = (np.percentile(finite, [2, 98]) if finite.size else (0.0, 1.0))
-    return {"units": (plot_logic._get_var_units(filepath) or {}).get(var, ""),
-            "cmin": float(lo), "cmax": float(hi if hi > lo else lo + 1e-9),
-            "values": [None if not np.isfinite(v) else float(f"{v:.5g}") for v in vals]}
+    lo, hi = np.percentile(finite, [2, 98]) if finite.size else (0.0, 1.0)
+    return {
+        "units": (plot_logic._get_var_units(filepath) or {}).get(var, ""),
+        "cmin": float(lo),
+        "cmax": float(hi if hi > lo else lo + 1e-9),
+        "values": [None if not np.isfinite(v) else float(f"{v:.5g}") for v in vals],
+    }

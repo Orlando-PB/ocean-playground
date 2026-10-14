@@ -6,6 +6,7 @@ end of cache_logic._process, and for files that predate this at startup) and kee
 (`bathy_fine:<grid>`; cache_logic drops it when the file changes). /api/3d_bathy still fetches on demand if a file is
 opened before its turn.
 """
+
 import json
 import logging
 import threading
@@ -15,7 +16,7 @@ import requests
 
 from . import cache_logic, spatial_logic
 
-GRID = 600                      # seabed points along the box's longer side
+GRID = 600  # seabed points along the box's longer side
 _queue: deque = deque()
 _cv = threading.Condition()
 _started = False
@@ -49,6 +50,7 @@ def track(file_id: str) -> bytes:
     lon[n], lat[n], z[n], pitch[n] (NaN where missing). A third of the JSON payload's size and no JSON encoding per
     request. Made from the cached 3D payload, then kept in the file's binary cache."""
     import numpy as np
+
     hit = cache_logic.get_plot_binary(file_id, TRACK_KEY)
     if hit is not None:
         return hit
@@ -56,9 +58,17 @@ def track(file_id: str) -> bytes:
     if not p or "lon" not in p:
         raise LookupError("No 3D track for this file")
     n = len(p["lon"])
-    col = lambda name, kind: np.array([np.nan if v is None else v for v in (p.get(name) or [None] * n)], dtype=kind)  # noqa: E731
-    data = b"".join([np.array([n, 0], dtype="<u4").tobytes(), col("time_ms", "<f8").tobytes(),
-                     *(col(name, "<f4").tobytes() for name in ("lon", "lat", "elevation", "pitch"))])
+
+    def col(name, kind):
+        return np.array([np.nan if v is None else v for v in (p.get(name) or [None] * n)], dtype=kind)
+
+    data = b"".join(
+        [
+            np.array([n, 0], dtype="<u4").tobytes(),
+            col("time_ms", "<f8").tobytes(),
+            *(col(name, "<f4").tobytes() for name in ("lon", "lat", "elevation", "pitch")),
+        ]
+    )
     cache_logic.put_plot_binary(file_id, TRACK_KEY, data)
     return data
 
@@ -85,8 +95,10 @@ def _worker() -> None:
             _offline_logged = False
         except requests.RequestException:
             if not _offline_logged:
-                log.warning("Seabed servers (NOAA coastwatch and PIFSC) not reachable; "
-                            "the 3D view will try again when it opens a file.")
+                log.warning(
+                    "Seabed servers (NOAA coastwatch and PIFSC) not reachable; "
+                    "the 3D view will try again when it opens a file."
+                )
                 _offline_logged = True
         except Exception:  # noqa: BLE001 — best effort: the route fetches on demand
             log.exception("Seabed prefetch failed for %s", file_id)

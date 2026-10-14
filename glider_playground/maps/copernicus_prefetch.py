@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 LAYERS: list[str] = list(copernicus_fetch.OVERLAYS.keys()) + ["currents"]
 
-_LAYER_PAUSE_SERVER = 0.5         # breather between layers on the Pi
+_LAYER_PAUSE_SERVER = 0.5  # breather between layers on the Pi
 
 _lock = threading.Lock()
 _queue: deque[str] = deque()
@@ -53,6 +53,7 @@ _warned: set[str] = set()
 
 # ---------- date rule ----------
 
+
 def target_date(rec) -> str | None:
     """Snapshot date for a file: the glider's last data point (a date past a
     dataset's last day is capped to it in copernicus_fetch._subset)."""
@@ -62,6 +63,7 @@ def target_date(rec) -> str | None:
 
 
 # ---------- store ----------
+
 
 def _store_key(key: str, latest: bool = False) -> str:
     return f"overlay_latest:{key}" if latest else f"overlay:{key}"
@@ -95,7 +97,7 @@ def _stored_date(data: bytes, key: str) -> str | None:
         if key == "currents":
             return json.loads(data.decode("utf-8")).get("date")
         (hlen,) = struct.unpack("<I", data[:4])
-        return json.loads(data[4:4 + hlen].decode("utf-8")).get("date")
+        return json.loads(data[4 : 4 + hlen].decode("utf-8")).get("date")
     except Exception:
         return None
 
@@ -125,8 +127,7 @@ def fetch_layer(file_id: str, key: str, latest: bool = False) -> tuple[bytes | N
         return None, {"error": "No spatial data for this file", "hint": ""}
     rec = cache_logic.get_record(file_id)
     date = None if latest else target_date(rec)
-    bbox = dict(lat_min=loc["lat_min"], lat_max=loc["lat_max"],
-                lon_min=loc["lon_min"], lon_max=loc["lon_max"])
+    bbox = dict(lat_min=loc["lat_min"], lat_max=loc["lat_max"], lon_min=loc["lon_min"], lon_max=loc["lon_max"])
     if key == "currents":
         result = copernicus_fetch.fetch_currents(target_date=date, **bbox)
     else:
@@ -148,16 +149,16 @@ def fetch_layer(file_id: str, key: str, latest: bool = False) -> tuple[bytes | N
         st = _status.get(file_id)
         if st is not None:
             st["layers"][key].update(state="ready", date=_stored_date(data, key), error=None, setup=None)
-            st["done"] = all(l["state"] != "pending" for l in st["layers"].values())
+            st["done"] = all(layer["state"] != "pending" for layer in st["layers"].values())
     return data, None
 
 
 # ---------- status ----------
 
+
 def _blank() -> dict:
     return {
-        "layers": {k: {"state": "pending", "date": None, "error": None, "setup": None}
-                   for k in LAYERS},
+        "layers": {k: {"state": "pending", "date": None, "error": None, "setup": None} for k in LAYERS},
         "done": False,
     }
 
@@ -171,7 +172,7 @@ def _sync_from_disk(file_id: str, st: dict) -> None:
         data = get_layer_bytes(file_id, k)
         if data is not None:
             layer.update(state="ready", date=_stored_date(data, k), error=None, setup=None)
-    st["done"] = all(l["state"] != "pending" for l in st["layers"].values())
+    st["done"] = all(layer["state"] != "pending" for layer in st["layers"].values())
 
 
 def get_status(file_id: str) -> dict:
@@ -179,13 +180,11 @@ def get_status(file_id: str) -> dict:
     front of the queue — the user is looking at this one) if needed."""
     rec = cache_logic.get_record(file_id)
     if not rec or rec.get("status") != cache_logic.STATUS_READY:
-        return {"layers": {k: {"state": "pending"} for k in LAYERS},
-                "done": False, "file_ready": False}
+        return {"layers": {k: {"state": "pending"} for k in LAYERS}, "done": False, "file_ready": False}
     ensure(file_id, front=True)
     with _lock:
         st = _status.get(file_id) or _blank()
-        out = {"layers": {k: dict(v) for k, v in st["layers"].items()},
-               "done": st["done"], "file_ready": True}
+        out = {"layers": {k: dict(v) for k, v in st["layers"].items()}, "done": st["done"], "file_ready": True}
     return out
 
 
@@ -246,16 +245,17 @@ def retry_errors() -> None:
 
 # ---------- worker ----------
 
+
 def _run_file(file_id: str) -> None:
     with _lock:
         st = _status.get(file_id)
         if st is None:
             return
-        pending = [k for k, l in st["layers"].items() if l["state"] == "pending"]
+        pending = [k for k, layer in st["layers"].items() if layer["state"] == "pending"]
     for key in pending:
         rec = cache_logic.get_record(file_id)
         if not rec or rec.get("status") != cache_logic.STATUS_READY:
-            return   # file went away / is reprocessing — forget() handles state
+            return  # file went away / is reprocessing — forget() handles state
         t0 = time.time()
         try:
             data, err = fetch_layer(file_id, key)
@@ -274,11 +274,15 @@ def _run_file(file_id: str) -> None:
                 msg = str(err.get("error"))
                 if msg not in _warned:
                     _warned.add(msg)
-                    logger.warning("Overlay prefetch failed (%s, %s): %s — further identical "
-                                   "failures are logged at DEBUG", key, rec.get("name", file_id), msg)
+                    logger.warning(
+                        "Overlay prefetch failed (%s, %s): %s — further identical failures are logged at DEBUG",
+                        key,
+                        rec.get("name", file_id),
+                        msg,
+                    )
                 else:
                     logger.debug("Prefetch %s for %s failed: %s", key, rec.get("name", file_id), msg)
-            st["done"] = all(l["state"] != "pending" for l in st["layers"].values())
+            st["done"] = all(layer["state"] != "pending" for layer in st["layers"].values())
         if server_config.IS_SERVER:
             time.sleep(_LAYER_PAUSE_SERVER)
 

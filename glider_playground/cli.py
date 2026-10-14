@@ -40,6 +40,7 @@ def _check_for_update():
     """Print the same upgrade steps the in-app (Jelly) notice shows, tailored to git vs pip installs."""
     try:
         from .server import update_logic
+
         info = update_logic.check()
         if info.get("outdated"):
             steps = "".join(f"\n    {s}" for s in info.get("steps", []))
@@ -70,21 +71,24 @@ def _parse_args():
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
-        "--port", type=int, default=PORT,
+        "--port",
+        type=int,
+        default=PORT,
         help=f"port to serve on (default: {PORT})",
     )
     parser.add_argument(
-        "--no-browser", action="store_true",
+        "--no-browser",
+        action="store_true",
         help="don't automatically open a browser tab on startup",
     )
     try:
-        version = __import__("importlib.metadata", fromlist=["version"]).version(
-            "glider-playground"
-        )
+        version = __import__("importlib.metadata", fromlist=["version"]).version("glider-playground")
     except Exception:
         version = "unknown"
     parser.add_argument(
-        "--version", action="version", version=f"glider-playground {version}",
+        "--version",
+        action="version",
+        version=f"glider-playground {version}",
     )
     return parser.parse_args()
 
@@ -106,12 +110,13 @@ def main():
         print("Running in Local Mode (localhost)")
 
     from glider_playground.core import presets_logic
+
     print(f"Starting {presets_logic.app_name()}...")
 
     threading.Thread(target=_check_for_update, daemon=True).start()
 
     if not is_server and not args.no_browser:
-        shown = "localhost" if host == "127.0.0.1" else host   # still binds 127.0.0.1; just friendlier to read
+        shown = "localhost" if host == "127.0.0.1" else host  # still binds 127.0.0.1; just friendlier to read
         print(f"Starting up — your browser will open shortly at http://{shown}:{args.port}")
         threading.Thread(target=open_browser, args=(shown, args.port), daemon=True).start()
 
