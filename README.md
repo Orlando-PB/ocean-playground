@@ -10,7 +10,7 @@ A web-based viewer for ocean glider and other platform data. Load your own OG1 N
 
 **Live site:** [glider-playground.co.uk](https://glider-playground.co.uk), no login needed *(it runs on a Raspberry Pi, so it can be slow)*
 
-**One-page guides (A5 PDF):** [Cheat sheet](https://github.com/Orlando-PB/glider-playground/blob/main/docs/cheat_sheet.pdf), how to use it · [Features](https://github.com/Orlando-PB/glider-playground/blob/main/docs/features.pdf), what it does
+**One-page guides (A5 PDF):** [Cheat sheet](https://github.com/Orlando-PB/ocean-playground/blob/main/docs/cheat_sheet.pdf), how to use it · [Features](https://github.com/Orlando-PB/ocean-playground/blob/main/docs/features.pdf), what it does
 
 ![Ocean Playground](glider_playground/static/readme_images/whole_view.webp)
 
@@ -29,8 +29,8 @@ This opens the app in your browser. Press `Ctrl+C` in the terminal to stop it.
 <summary>Install from source</summary>
 
 ```bash
-git clone https://github.com/Orlando-PB/glider-playground.git
-cd glider-playground
+git clone https://github.com/Orlando-PB/ocean-playground.git
+cd ocean-playground
 pip install .
 ```
 </details>
