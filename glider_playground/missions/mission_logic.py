@@ -15,6 +15,7 @@ from pathlib import Path
 
 import numpy as np
 
+from .. import platforms
 from ..core import cache_logic, spatial_logic
 from ..maps import argo_logic
 from ..server import server_config
@@ -211,7 +212,7 @@ def track(m: dict, key: str, colour: str | None = None) -> dict:
         "pitch": col("pitch", 1),
     }
     if colour:
-        c = spatial_logic.track_colour(rec["path"], colour)
+        c = spatial_logic.track_colour(rec["path"], platforms.of(rec), colour)
         vals = c.get("values")
         want = (_colour_presets(m).get(colour) or {}).get("var")
         if vals and len(vals) == len(payload["lon"]) and str(c.get("var", "")).replace("_ADJUSTED", "") == want:
@@ -228,7 +229,7 @@ def _colour_presets(m: dict) -> dict:
         rec = _resolve(p, index)
         if not rec or rec.get("status") != cache_logic.STATUS_READY:
             continue
-        for o in spatial_logic.track_colour_options(rec["path"]):
+        for o in spatial_logic.track_colour_options(rec["path"], platforms.of(rec)):
             if str(o.get("cmap", "")).startswith("discrete"):  # shared continuous scale only
                 continue
             seen.setdefault(o["key"], []).append(o)

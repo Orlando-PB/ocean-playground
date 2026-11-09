@@ -638,7 +638,7 @@ def _hard_time_valid_mask(t_vals):
     relative to everything before it are always dropped, regardless of QC flag
     selection — they aren't meaningful data, not just "bad" data. A merely
     out-of-range (pre-1990 / future) but well-ordered timestamp is NOT dropped
-    here; that's flagged QC=4 (see derive_logic._compute_time_qc) and left to
+    here; that's flagged QC=4 (see derive_logic.compute_time_qc) and left to
     the normal per-variable flag filtering, like everything else."""
     t_int = np.asarray(t_vals).astype("datetime64[ns]").view("int64")
     valid = ~_isnull(t_vals)
@@ -758,7 +758,7 @@ def _apply_ctd_processing(data_dict, time_var, units_map, interpolate=False, app
             min_time = pd.Timestamp("1990-01-01")
             # t_vals is naive UTC — pd.Timestamp.now() is naive LOCAL walltime,
             # so comparing the two shifted this "future" cutoff by the server's
-            # UTC offset (see derive_logic._compute_time_qc for the same fix).
+            # UTC offset (see derive_logic.compute_time_qc for the same fix).
             now_time = pd.Timestamp.utcnow().tz_localize(None)
             nat_mask = np.asarray(pd.isna(t_dt))
             range_ok = np.asarray((t_dt >= min_time) & (t_dt <= now_time))
@@ -863,6 +863,12 @@ def _get_var_units(filepath):
     for name, m in get_derived_meta(filepath).items():
         units.setdefault(name, m.get("units", ""))
     return units
+
+
+def names_with_data(filepath) -> set:
+    """Variable names minus all-NaN placeholders (an Argo float's empty *_ADJUSTED in real-time mode), as the
+    frontend's hasData sees them, so the backend picks the same variable a preset does."""
+    return {v["name"] for v in get_variables(filepath) if not v.get("empty")}
 
 
 @functools.lru_cache(maxsize=32)

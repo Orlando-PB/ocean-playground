@@ -77,6 +77,10 @@
         #argoCard .argoSpin { animation: chlaspin 0.9s linear infinite; display:inline-block; }
         #argoCard h3 { cursor:pointer; user-select:none; }
         #argoCard .chev { font-size:16px; color: var(--text-muted); transition: transform .15s; }
+        #argoCard .argoOpen { display:flex; align-items:center; justify-content:center; gap:4px; width:100%; margin:4px 0 6px; padding:4px 8px;
+            border:none; border-radius:6px; cursor:pointer; font: inherit; font-weight:600;
+            background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--text-primary); }
+        #argoCard .argoOpen:hover { background: color-mix(in srgb, var(--accent) 38%, transparent); }
         #argoCard.collapsed .chev { transform: rotate(-90deg); }
         #argoCard.collapsed > :not(h3) { display:none; }
         #argoCard.collapsed h3 { margin-bottom:0; }
@@ -355,11 +359,16 @@
         const cls = status === 'Active' ? 'on' : 'off';
         return `<h3 id="argoHead"><span class="material-symbols-outlined chev">expand_more</span><img src="/static/icons/argo-mapicon.svg" alt="" style="height:20px;filter:drop-shadow(0 0 1px #fff);"><span>Argo ${esc(wmo)}</span>` +
             (status ? `<span class="st ${cls}">${esc(status)}</span>` : '') +
-            `<span class="sp"></span><button id="argoClose" title="Close"><span class="material-symbols-outlined" style="font-size:16px;">close</span></button></h3>`;
+            `<span class="sp"></span><button id="argoClose" title="Close"><span class="material-symbols-outlined" style="font-size:16px;">close</span></button></h3>` +
+            `<button class="argoOpen" data-wmo="${esc(wmo)}" title="Download this float's profiles and open them like a glider"><span class="material-symbols-outlined" style="font-size:14px;">monitoring</span>Open profile data</button>`;
     }
     function wireCard() {
         ui.card.querySelector('#argoClose').addEventListener('click', (e) => { e.stopPropagation(); closeCard(); });
         ui.card.querySelector('#argoHead').addEventListener('click', () => ui.card.classList.toggle('collapsed'));
+        // The shell downloads the float through its live feed and opens it (openArgoFloat in index.html).
+        ui.card.querySelector('.argoOpen').addEventListener('click', (e) => {
+            try { window.parent.postMessage({ type: 'openArgo', wmo: e.currentTarget.dataset.wmo }, '*'); } catch (_) {}
+        });
     }
 
     function showCard(f) {

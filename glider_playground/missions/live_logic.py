@@ -117,6 +117,7 @@ def missions() -> dict:
             r
             for r in cache_logic.list_files()
             if erddap_fetch.is_managed(r.get("path", ""))
+            and r.get("platform") != "argo"  # opened on demand, not a live deployment
             and r.get("status") == cache_logic.STATUS_READY
             and r.get("last_lat") is not None
             and r.get("last_lon") is not None

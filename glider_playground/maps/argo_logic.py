@@ -20,7 +20,11 @@ Two upstream sources, both read-only:
   and trimmed here so the browser never talks to a third-party host directly;
   cached in-process for ``DETAIL_TTL``.
 
-Nothing here downloads profile data or touches the file cache.
+Opening a float downloads its profile data (the GDAC's ``<wmo>_Sprof.nc``, or ``_prof.nc`` for a
+core-only float) through the live feed in ``server/erddap_fetch``: it is listed in the Files panel's
+"Argo floats" block, re-downloaded when the daily index shows a newer profile, and read by
+``platforms/argo.py``. At most ``OPENED_MAX`` floats are kept; one viewed or opened in the last
+``IN_USE_SEC`` is never evicted, so on a busy server opening another can be refused instead.
 """
 
 from __future__ import annotations
@@ -39,6 +43,7 @@ import numpy as np
 import requests
 
 from ..core import cache_logic
+from ..server import erddap_fetch
 
 log = logging.getLogger(__name__)
 
@@ -402,3 +407,135 @@ def float_detail(wmo: str) -> dict:
     }
     _detail_cache[wmo] = (now, out)
     return out
+
+
+# ---------- opened floats (profile data, through the live feed) ----------
+
+GDAC_URL = "https://data-argo.ifremer.fr/dac"
+OPENED_JSON = ARGO_DIR / "opened.json"
+OPENED_MAX = 50  # floats kept on disk, ~7 MB each
+IN_USE_SEC = 15 * 60  # a float viewed or opened this recently is never evicted
+FORGET_DAYS = 30  # an opened float nobody has viewed for this long is deleted
+MAX_DOWNLOADING = 3
+VIEWED_WRITE_SEC = 5 * 60  # how stale a stored "viewed" time may get before it's rewritten
+
+_opened_lock = threading.Lock()
+
+
+class Busy(Exception):
+    """Too many floats in use or downloading to open another one right now."""
+
+
+def filename(wmo: str) -> str:
+    return f"argo_{wmo}.nc"
+
+
+def _load_opened() -> dict:
+    """WMO -> {"opened": epoch, "viewed": epoch}."""
+    try:
+        return json.loads(OPENED_JSON.read_text())
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _save_opened(opened: dict):
+    ARGO_DIR.mkdir(parents=True, exist_ok=True)
+    OPENED_JSON.write_text(json.dumps(opened))
+
+
+def _last_used(o: dict) -> float:
+    return max(o["opened"], o["viewed"])
+
+
+def _float(wmo: str) -> Optional[dict]:
+    _ensure_loaded()
+    with _lock:
+        data = _floats
+    if data is None:
+        return None
+    return next((r for r in data["floats"] if r["wmo"] == wmo), None)
+
+
+def _entry(rec: dict) -> dict:
+    """A live-feed entry (see erddap_fetch) for one float."""
+    wmo, dac = rec["wmo"], rec["dac"]
+    last = datetime.strptime(rec["last"].ljust(14, "0")[:14], "%Y%m%d%H%M%S").replace(tzinfo=timezone.utc)
+    return {
+        "dataset": f"Argo {wmo}",
+        "filename": filename(wmo),
+        "url": f"{GDAC_URL}/{dac}/{wmo}/{wmo}_Sprof.nc",
+        "fallback_url": f"{GDAC_URL}/{dac}/{wmo}/{wmo}_prof.nc",
+        "server_mtime": last.timestamp(),
+        "platform": "argo",
+        "source": "argo",
+    }
+
+
+def open_float(wmo: str) -> dict:
+    """Start (or keep) serving a float's profile data. Raises LookupError for an unknown float and Busy when
+    every kept float is in use or too many are downloading."""
+    wmo = "".join(ch for ch in str(wmo) if ch.isdigit())
+    rec = _float(wmo)
+    if rec is None:
+        with _lock:
+            loaded = _floats is not None
+        if not loaded:
+            raise Busy("The Argo float index is still loading. Try again in a minute.")
+        raise LookupError(f"No Argo float {wmo} in the GDAC index")
+    now = time.time()
+    with _opened_lock:
+        opened = _load_opened()
+        if wmo in opened:
+            opened[wmo]["opened"] = now
+        else:
+            if erddap_fetch.downloading_count("argo") >= MAX_DOWNLOADING:
+                raise Busy("Several floats are downloading right now. Try again in a minute.")
+            if len(opened) >= OPENED_MAX:
+                idle = [w for w, o in opened.items() if now - _last_used(o) > IN_USE_SEC]
+                if not idle:
+                    raise Busy("Too many people are looking at Argo floats right now. Try again in a few minutes.")
+                oldest = min(idle, key=lambda w: _last_used(opened[w]))
+                opened.pop(oldest)
+                erddap_fetch.remove_managed(filename(oldest))
+            opened[wmo] = {"opened": now, "viewed": now}
+        _save_opened(opened)
+    erddap_fetch.add_live_entry(_entry(rec))
+    return {"filename": filename(wmo)}
+
+
+def note_viewed(name: str):
+    """Someone has this file open (the shell's heartbeat); keeps an opened float from being evicted."""
+    if not name.startswith("argo_"):
+        return
+    wmo = name[len("argo_") : -len(".nc")]
+    now = time.time()
+    with _opened_lock:
+        opened = _load_opened()
+        o = opened.get(wmo)
+        if o and now - o["viewed"] > VIEWED_WRITE_SEC:
+            o["viewed"] = now
+            _save_opened(opened)
+
+
+def live_entries() -> Optional[list]:
+    """Live-feed entries for the opened floats, or None while the index isn't loaded. Forgets (and deletes)
+    floats the user binned or nobody has viewed for FORGET_DAYS."""
+    now = time.time()
+    with _opened_lock:
+        opened = _load_opened()
+        gone = [
+            w
+            for w, o in opened.items()
+            if now - _last_used(o) > FORGET_DAYS * 86400 or erddap_fetch.is_suppressed(filename(w))
+        ]
+        for w in gone:
+            opened.pop(w)
+            erddap_fetch.remove_managed(filename(w))
+        if gone:
+            _save_opened(opened)
+    _ensure_loaded()
+    with _lock:
+        loaded = _floats is not None
+    if not loaded:
+        return None
+    return [_entry(rec) for rec in (_float(w) for w in opened) if rec]

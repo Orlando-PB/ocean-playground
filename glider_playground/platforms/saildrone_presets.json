@@ -1,0 +1,228 @@
+{
+  "_help": [
+    "PLOT PRESETS and DASHBOARD VIEWS for Saildrones (the saildrone platform, platforms/saildrone.py). Variable names are PMEL's ERDDAP ones; time/latitude/longitude are renamed to TIME/LATITUDE/LONGITUDE when the file comes in. Same format as og1_presets.json (see its _help); the app name and colour palettes are shared, in glider_playground/plot_presets.json. Restart the app after editing."
+  ],
+  "axes": {
+    "time": ["TIME"]
+  },
+  "presets": {
+    "preset_sd_sst": {
+      "label": "Sea temp",
+      "icon": "thermostat",
+      "colour": "red",
+      "group": "Ocean",
+      "x": "time",
+      "y": ["sbe37_temperature_filtered", "rbr_coda_t_temperature_filtered", "ir_thermo_temperature_filtered"],
+      "c": ["sbe37_temperature_filtered", "rbr_coda_t_temperature_filtered", "ir_thermo_temperature_filtered"],
+      "cmap": "temp",
+      "invert_y": false,
+      "prewarm": true
+    },
+    "preset_sd_sal": {
+      "label": "Salinity",
+      "icon": "water_drop",
+      "colour": "blue",
+      "group": "Ocean",
+      "x": "time",
+      "y": ["sbe37_practical_salinity_filtered"],
+      "c": ["sbe37_practical_salinity_filtered"],
+      "cmap": "sal",
+      "invert_y": false,
+      "prewarm": true
+    },
+    "preset_sd_doxy": {
+      "label": "Oxygen",
+      "icon": "air",
+      "colour": "cyan",
+      "group": "Ocean",
+      "x": "time",
+      "y": ["sbe37_o2_concentration_filtered"],
+      "c": ["sbe37_o2_concentration_filtered"],
+      "cmap": "oxy",
+      "invert_y": false
+    },
+    "preset_sd_chla": {
+      "label": "Chl-a",
+      "icon": "grass",
+      "colour": "green",
+      "group": "Ocean",
+      "x": "time",
+      "y": ["fluoro_chlorophyll_filtered"],
+      "c": ["fluoro_chlorophyll_filtered"],
+      "cmap": "chla",
+      "invert_y": false
+    },
+    "preset_sd_temps": {
+      "label": "All temps",
+      "icon": "device_thermostat",
+      "colour": "gray",
+      "group": "Ocean",
+      "x": "time",
+      "y": ["sbe37_temperature_filtered"],
+      "c": [],
+      "cmap": "black",
+      "invert_y": false,
+      "lines": [
+        "sbe37_temperature_filtered",
+        "rbr_coda_t_temperature_filtered",
+        "ir_thermo_temperature_filtered",
+        "air_temperature_filtered"
+      ]
+    },
+    "preset_sd_wind": {
+      "label": "Wind",
+      "icon": "wind_power",
+      "colour": "cyan",
+      "group": "Weather",
+      "x": "time",
+      "y": ["wind_speed_world_filtered"],
+      "c": ["wind_speed_world_filtered"],
+      "cmap": "speed",
+      "invert_y": false,
+      "prewarm": true
+    },
+    "preset_sd_gust": {
+      "label": "Wind & gust",
+      "icon": "storm",
+      "colour": "gray",
+      "group": "Weather",
+      "x": "time",
+      "y": ["wind_speed_world_filtered"],
+      "c": [],
+      "cmap": "black",
+      "invert_y": false,
+      "lines": ["wind_speed_world_filtered", "wind_gust_filtered"]
+    },
+    "preset_sd_wind_dir": {
+      "label": "Wind direction",
+      "icon": "explore",
+      "colour": "indigo",
+      "group": "Weather",
+      "x": "time",
+      "y": ["wind_direction_world_filtered"],
+      "c": ["wind_speed_world_filtered"],
+      "cmap": "speed",
+      "invert_y": false,
+      "points": true
+    },
+    "preset_sd_pressure": {
+      "label": "Pressure",
+      "icon": "compress",
+      "colour": "purple",
+      "group": "Weather",
+      "x": "time",
+      "y": ["baro_pressure_filtered"],
+      "c": ["baro_pressure_filtered"],
+      "cmap": "deep",
+      "invert_y": false
+    },
+    "preset_sd_air_temp": {
+      "label": "Air temp",
+      "icon": "thermostat",
+      "colour": "red",
+      "group": "Weather",
+      "x": "time",
+      "y": ["air_temperature_filtered"],
+      "c": ["air_temperature_filtered"],
+      "cmap": "thermal",
+      "invert_y": false
+    },
+    "preset_sd_humidity": {
+      "label": "Humidity",
+      "icon": "humidity_percentage",
+      "colour": "blue",
+      "group": "Weather",
+      "x": "time",
+      "y": ["relative_humidity_filtered"],
+      "c": ["relative_humidity_filtered"],
+      "cmap": "rain",
+      "invert_y": false
+    },
+    "preset_sd_par": {
+      "label": "PAR",
+      "icon": "sunny",
+      "colour": "yellow",
+      "group": "Weather",
+      "x": "time",
+      "y": ["par_radiation_filtered"],
+      "c": ["par_radiation_filtered"],
+      "cmap": "sunset",
+      "invert_y": false
+    },
+    "preset_sd_waves": {
+      "label": "Wave height",
+      "icon": "waves",
+      "colour": "indigo",
+      "group": "Sea state",
+      "x": "time",
+      "y": ["wave_significant_height"],
+      "c": ["wave_significant_height"],
+      "cmap": "amp",
+      "invert_y": false
+    },
+    "preset_sd_wave_period": {
+      "label": "Wave period",
+      "icon": "airwave",
+      "colour": "gray",
+      "group": "Sea state",
+      "x": "time",
+      "y": ["wave_dominant_period"],
+      "c": [],
+      "cmap": "black",
+      "invert_y": false,
+      "lines": ["wave_dominant_period", "wave_mean_period"]
+    },
+    "preset_sd_current": {
+      "label": "Current",
+      "icon": "tsunami",
+      "colour": "cyan",
+      "group": "Sea state",
+      "x": "time",
+      "y": ["water_current_speed_filtered"],
+      "c": ["water_current_speed_filtered"],
+      "cmap": "speed",
+      "invert_y": false
+    },
+    "preset_sd_speed": {
+      "label": "Speed",
+      "icon": "speed",
+      "colour": "amber",
+      "group": "Vehicle",
+      "x": "time",
+      "y": ["speed_over_ground_mean"],
+      "c": ["speed_over_ground_mean"],
+      "cmap": "speed",
+      "invert_y": false
+    },
+    "preset_sd_motion": {
+      "label": "Pitch & roll",
+      "icon": "sailing",
+      "colour": "gray",
+      "group": "Vehicle",
+      "x": "time",
+      "y": ["pitch_mean"],
+      "c": [],
+      "cmap": "black",
+      "invert_y": false,
+      "lines": ["pitch_mean", "roll_mean"]
+    }
+  },
+  "views": {
+    "default_preset": "preset_sd_sst",
+    "new_plot_order": [
+      "preset_sd_sst",
+      "preset_sd_wind",
+      "preset_sd_sal",
+      "preset_sd_chla",
+      "preset_sd_doxy",
+      "preset_sd_pressure",
+      "preset_sd_waves"
+    ],
+    "invert_y_vars": [],
+    "overview": ["preset_sd_sst", "preset_sd_wind", "preset_sd_waves", "preset_sd_chla"],
+    "dashboard": ["preset_sd_sst", "preset_sd_sal", "preset_sd_wind", "preset_sd_pressure", "preset_sd_waves", "preset_sd_chla"],
+    "biooptics": ["preset_sd_sst", "preset_sd_chla", "preset_sd_par"],
+    "chemistry": ["preset_sd_sal", "preset_sd_doxy"],
+    "duo": ["preset_sd_wind", "preset_sd_sst"]
+  }
+}

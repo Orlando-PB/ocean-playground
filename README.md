@@ -2,7 +2,7 @@
 
 <a href="https://www.noc.ac.uk/" title="National Oceanography Centre"><img src="glider_playground/static/readme_images/NOC_logo.svg" alt="National Oceanography Centre" width="72" align="right"></a>
 
-A web-based viewer for ocean glider and other platform data. Load your own OG1 NetCDF files, or open live deployments from BODC.
+A web-based viewer for ocean glider and other platform data. Load your own OG1 NetCDF files, or open live deployments from BODC (gliders) and NOAA PMEL (Saildrones).
 
 > **Renamed:** Glider Playground is now **Ocean Playground**. So far only the name has changed: the PyPI package, the
 > `glider-playground` command, the `~/.glider_playground` folder and the website (glider-playground.co.uk) still use
@@ -41,15 +41,16 @@ pip install .
 
 Click the file name (top left) to open the file panel. From there you can:
 
-- **Open a live BODC deployment**: platforms reporting in the last week are listed at the top
+- **Open a live deployment**: BODC gliders and NOAA PMEL Saildrones reporting in the last week are listed at the top
+- **Open an Argo float**: click a float on the map (Argo layer) and choose *Open profile data*, or click its name tag in a mission (switch tags on in the mission key); it appears under *Argo floats*
 - **Add files**: pick individual `.nc` files
 - **Add folder**: load every `.nc` file in a folder
 
 Each file is processed once in the background; click it when it's ready.
 
-> **File format:** files must be [OG1](https://github.com/OceanGlidersCommunity/OG-format-user-manual) (or OG1-compatible), the OceanGliders community NetCDF format.
+> **File format:** files must be [OG1](https://github.com/OceanGlidersCommunity/OG-format-user-manual) (or OG1-compatible), the OceanGliders community NetCDF format. Saildrone files from NOAA PMEL's ERDDAP also work when uploaded.
 
-> Live data is provided by the [British Oceanographic Data Centre (BODC)](https://platforms.bodc.ac.uk/deployment-catalogue/).
+> Live data is provided by the [British Oceanographic Data Centre (BODC)](https://platforms.bodc.ac.uk/deployment-catalogue/) and, for Saildrones, [NOAA PMEL](https://data.pmel.noaa.gov/pmel/erddap/) (CC0). Argo data were collected and made freely available by the International Argo Program and the national programs that contribute to it ([argo.ucsd.edu](https://argo.ucsd.edu), [ocean-ops.org](https://www.ocean-ops.org)); [doi:10.17882/42182](https://doi.org/10.17882/42182).
 
 ---
 
@@ -190,7 +191,7 @@ pip uninstall glider-playground
 
 ## Developer Info
 
-To change the default plots, views or colour palettes, edit [`glider_playground/plot_presets.json`](glider_playground/plot_presets.json) (instructions at the top of the file) and restart.
+To change the default plots or views, edit the platform's presets file, e.g. [`glider_playground/platforms/og1_presets.json`](glider_playground/platforms/og1_presets.json) for gliders; colour palettes are in [`glider_playground/plot_presets.json`](glider_playground/plot_presets.json). Instructions are at the top of each file; restart after editing.
 
 See [OVERVIEW.md](OVERVIEW.md) for the code layout, architecture, data pipeline and deployment.
 

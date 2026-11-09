@@ -642,6 +642,16 @@
             line-height: 1.3;
             color: var(--text-muted);
         }
+        .live-source-head {
+            display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+            padding: 8px 12px 2px;
+        }
+        .live-source-title {
+            font-size: 9px; font-weight: 700; letter-spacing: 0.06em;
+            text-transform: uppercase; color: var(--text-muted);
+        }
+        .live-source-credit { font-size: 9px; color: var(--text-muted); white-space: nowrap; }
+        .live-source-credit a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
         .files-section-credit {
             padding: 4px 12px 8px;
             font-size: 9.5px;
@@ -721,7 +731,7 @@
         .preset-btn.bg-yellow-100 { background-color: rgba(250,204,21,0.16) !important; }
         .preset-btn.text-yellow-800 { color: #fde047 !important; }
 
-        /* Presets given a hex colour in plot_presets.json (--pc set inline) */
+        /* Presets given a hex colour in their platform presets file (--pc set inline) */
         .preset-btn.preset-btn-custom { background-color: color-mix(in srgb, var(--pc) 16%, transparent); color: color-mix(in srgb, var(--pc) 55%, white); }
         :root[data-theme="light"] .preset-btn.preset-btn-custom { background-color: color-mix(in srgb, var(--pc) 35%, white); color: color-mix(in srgb, var(--pc) 45%, black); }
 
@@ -1435,7 +1445,7 @@
 
                 <!-- Files -->
                 <div class="toolbar-group" id="datasetGroup" style="position: relative;">
-                    <span class="group-label" data-tip="Select OG1 files to display. Each file is processed once on upload. You can also view BODC's live deployments when available.">
+                    <span class="group-label" data-tip="Select OG1 files to display. Each file is processed once on upload. You can also view live deployments from BODC and NOAA PMEL when available.">
                         Files
                         <span class="info-dot"><span class="material-symbols-outlined">info</span></span>
                     </span>
@@ -1458,15 +1468,14 @@
                         </div>
                         <div class="files-section-header">
                             <div class="flex flex-col gap-0.5 min-w-0">
-                                <span class="files-section-title">Live BODC deployments</span>
-                                <span id="liveScannedAt" class="files-section-sub" aria-live="polite">Checking BODC for live gliders…</span>
+                                <span class="files-section-title">Live deployments</span>
+                                <span id="liveScannedAt" class="files-section-sub" aria-live="polite">Checking for live deployments…</span>
                             </div>
                             <button id="liveRefreshBtn" type="button" class="files-section-action" title="Re-scan server">
                                 <span id="liveRefreshIcon" class="material-symbols-outlined text-[14px]">refresh</span>
                             </button>
                         </div>
                         <div id="liveList" class="files-list"></div>
-                        <div class="files-section-credit">Live data provided by the British Oceanographic Data Centre (BODC).</div>
                         <div class="files-section-header">
                             <div class="flex flex-col gap-0.5 min-w-0">
                                 <span class="files-section-title">Your files</span>
@@ -3211,11 +3220,11 @@
         }
 
         // Toast with an optional action button (e.g. Undo); stays longer than the plain one.
-        function showActionToast(message, action) {
+        function showActionToast(message, action, icon = 'swap_horiz') {
             const el = document.getElementById('shareToast');
             if (!el) return;
             el.className = 'ok' + (action ? ' has-action' : '');
-            el.innerHTML = `<span class="material-symbols-outlined">swap_horiz</span>${escapeHtmlSafe(message)}`;
+            el.innerHTML = `<span class="material-symbols-outlined">${icon}</span>${escapeHtmlSafe(message)}`;
             if (action) {
                 const b = document.createElement('button');
                 b.type = 'button'; b.className = 'toast-action'; b.textContent = action.label;
@@ -3225,7 +3234,7 @@
             void el.offsetWidth;
             el.classList.add('show');
             clearTimeout(_shareToastTimer);
-            _shareToastTimer = setTimeout(() => el.classList.remove('show'), action ? 6000 : 2200);
+            _shareToastTimer = setTimeout(() => el.classList.remove('show'), action || icon === 'error' ? 6000 : 2200);
         }
 
         async function shareCurrentView() {
@@ -3366,10 +3375,12 @@
             if (!(snap && buildFromSnapshot(snap))) buildDefaultLayout();
         }
 
-        // Presets, views and palettes come from plot_presets.json (/api/plot_presets.js →
-        // window.GP_PLOT_PRESETS); edit that file. Reshaped here into OceanPresets.
+        // Presets and views come from the platform presets file (platforms/*_presets.json), palettes from
+        // plot_presets.json, both via /api/plot_presets.js → window.GP_PLOT_PRESETS; edit those files. Reshaped here into OceanPresets.
         const PRESET_CFG = window.GP_PLOT_PRESETS || { axes: {}, presets: {}, views: {}, palettes: {} };
-        const PRESET_VIEWS = PRESET_CFG.views || {};
+        const PLATFORM_PRESETS = PRESET_CFG.platforms || { og1: PRESET_CFG };
+        const DEFAULT_PLATFORM = PRESET_CFG.default_platform || 'og1';
+        let presetPlatform = '', PRESET_VIEWS = {}, OceanPresets = {}, DEFAULT_PRESET = 'preset_temp';
         const PRESET_NAMED_COLOURS = {
             gray:   ['bg-gray-100', 'text-gray-700'],     red:    ['bg-red-100', 'text-red-800'],
             purple: ['bg-purple-100', 'text-purple-800'], blue:   ['bg-blue-100', 'text-blue-800'],
@@ -3377,10 +3388,10 @@
             cyan:   ['bg-cyan-100', 'text-cyan-800'],     amber:  ['bg-amber-100', 'text-amber-800'],
             yellow: ['bg-yellow-100', 'text-yellow-800'],
         };
-        const OceanPresets = (() => {
-            const names = (spec) => typeof spec === 'string' ? (PRESET_CFG.axes[spec] || [spec]) : (spec || []);
+        function buildOceanPresets(cfg) {
+            const names = (spec) => typeof spec === 'string' ? ((cfg.axes || {})[spec] || [spec]) : (spec || []);
             const out = {};
-            for (const [key, p] of Object.entries(PRESET_CFG.presets || {})) {
+            for (const [key, p] of Object.entries(cfg.presets || {})) {
                 const named = PRESET_NAMED_COLOURS[p.colour];
                 out[key] = {
                     text: p.label || key, icon: p.icon || 'show_chart',
@@ -3396,15 +3407,25 @@
                 if (p.draw_order) out[key].drawOrder = p.draw_order;
             }
             return out;
-        })();
-        const DEFAULT_PRESET = OceanPresets[PRESET_VIEWS.default_preset] ? PRESET_VIEWS.default_preset : (Object.keys(OceanPresets)[0] || 'preset_temp');
+        }
+        // Each platform (glider, Saildrone, ...) has its own presets and views: switch the toolbar to a file's.
+        function usePlatformPresets(name) {
+            if (!PLATFORM_PRESETS[name]) name = DEFAULT_PLATFORM;
+            if (name === presetPlatform) return;
+            presetPlatform = name;
+            const cfg = PLATFORM_PRESETS[name];
+            PRESET_VIEWS = cfg.views || {};
+            OceanPresets = buildOceanPresets(cfg);
+            DEFAULT_PRESET = OceanPresets[PRESET_VIEWS.default_preset] ? PRESET_VIEWS.default_preset : (Object.keys(OceanPresets)[0] || 'preset_temp');
+            renderPresetsDropdown();
+        }
         // A view's plot list from the JSON → [{ key, drawOrder? }], unknown presets dropped.
         const viewSpecs = (name) => (PRESET_VIEWS[name] || [])
             .map(e => typeof e === 'string' ? { key: e } : { key: e.preset, drawOrder: e.draw_order })
             .filter(s => OceanPresets[s.key]);
 
         // Build preset buttons immediately rather than after /api/config, so the toolbar doesn't grow after first paint.
-        renderPresetsDropdown();
+        usePlatformPresets(DEFAULT_PLATFORM);
 
         const COOKIE_FILE = 'gp_file_id';
         const COOKIE_THEME = 'gp_theme';
@@ -3548,6 +3569,12 @@
             // Copernicus overlay failed (not installed / logged in): surface setup help via Jelly.
             if (msg.type === 'overlaySetup') {
                 notifyCopernicusSetup(msg.message, msg.hint, msg.command, msg.setup);
+                return;
+            }
+
+            // An Argo float's "open data" (map card, 3D view tag, mission).
+            if (msg.type === 'openArgo') {
+                if (msg.wmo) openArgoFloat(String(msg.wmo));
                 return;
             }
 
@@ -3865,7 +3892,7 @@
 
         }
 
-        // A preset's `group` (plot_presets.json) folds it into one chip that opens a menu on hover / focus / click.
+        // A preset's `group` (platform presets file) folds it into one chip that opens a menu on hover / focus / click.
         function presetGroupHost(name) {
             if (presetGroups[name]) return presetGroups[name].menu;
             const wrap = document.createElement('div'); wrap.className = 'preset-group';
@@ -4284,7 +4311,7 @@
             markViewApplied();
         }
 
-        // Bio-optics / Chemistry: the view's presets from plot_presets.json, stacked beside a globe.
+        // Bio-optics / Chemistry: the view's presets from the platform presets file, stacked beside a globe.
         // A preset can appear twice (e.g. chl, bbp in Bio-optics) with different draw orders.
         function applyStackView(kind) {
             const specs = viewSpecs(kind)
@@ -4347,7 +4374,7 @@
 
             const topMap    = keepMap || createPanel('map',  { datasetId: datasetSelect.value || '' });
             const bottomMap = keepMap2 || createPanel('map2', { datasetId: datasetSelect.value || '' });
-            // The two plots come from views.duo in plot_presets.json (top, bottom).
+            // The two plots come from views.duo in the platform presets file (top, bottom).
             const [duoTop, duoBottom] = viewSpecs('duo').map(s => s.key);
             const bbp = createPanel('plot', stateFromPreset(duoTop || DEFAULT_PRESET));
             const sal = createPanel('plot', stateFromPreset(duoBottom || DEFAULT_PRESET));
@@ -4671,10 +4698,10 @@
 
         liveRefreshBtn.addEventListener('click', () => refreshLive({ force: true }));
 
-        // ---------- Live BODC section (inside files dropdown) ----------
+        // ---------- Live section (inside files dropdown): one block per data centre ----------
         let _liveInFlight = false;
         let _liveData = null;
-        let _liveScanning = true;            // server is scanning BODC (true until the first scan lands)
+        let _liveScanning = true;            // server is scanning the data centres (true until the first scan lands)
         let _liveScanError = false;
         let _liveRefreshTimer = null;
         const _liveOptimistic = new Set();   // filenames we've asked to download
@@ -4701,10 +4728,9 @@
             liveRefreshIcon.style.animation = _liveScanning ? 'spin 1s linear infinite' : '';
             liveRefreshBtn.disabled = _liveScanning;
             liveList.classList.toggle('is-scanning', _liveScanning);
-            if (_liveScanning) liveScannedAt.textContent = 'Checking BODC for live gliders…';
-            else if (_liveScanError && !_liveData) liveScannedAt.textContent = 'BODC didn’t respond, retrying shortly…';
-            else if (_liveData) liveScannedAt.textContent =
-                `${_liveScanError ? 'BODC didn’t respond. ' : ''}Last scan: ${relTimeAgo(_liveData.scanned_at)}`;
+            if (_liveScanning) liveScannedAt.textContent = 'Checking for live deployments…';
+            else if (_liveScanError && !_liveData) liveScannedAt.textContent = 'No data centre responded, retrying shortly…';
+            else if (_liveData) liveScannedAt.textContent = `Last scan: ${relTimeAgo(_liveData.scanned_at)}`;   // a source that didn't answer says so in its own block
         }
 
         function liveIsBusy() {
@@ -4716,7 +4742,7 @@
             );
         }
 
-        // Polls our own server (never BODC, which the server scans on its own timer), open or not.
+        // Polls our own server (never the data centres, which the server scans on its own timer), open or not.
         function scheduleLivePoll() {
             clearTimeout(_liveRefreshTimer);
             const delay = liveIsBusy() ? 2000 : 60000;
@@ -4729,7 +4755,9 @@
             if (force) { _liveScanning = true; setLiveScanUi(); }
             try {
                 // Returns at once with the cached listing; the scan runs server-side and we poll on `scanning`.
-                const res = await fetch(`/api/live${force ? '?force=true' : ''}`);
+                // `viewing`: the open file, so the server never evicts an opened Argo float someone is looking at.
+                const q = new URLSearchParams({ ...(force ? { force: 'true' } : {}), ...(datasetSelect.value ? { viewing: datasetSelect.value } : {}) });
+                const res = await fetch(`/api/live?${q}`);
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const data = await res.json();
                 _liveScanning = !!data.scanning;
@@ -4740,7 +4768,7 @@
                 setLiveScanUi();
                 renderFilesList();
                 await resolvePendingOpen();
-                // A share link may be waiting on a live glider; now the BODC list is in, open it.
+                // A share link may be waiting on a live glider; now the live list is in, open it.
                 await resolveSharedFile();
             } catch (e) {
                 console.error('Live fetch failed:', e);
@@ -4766,15 +4794,18 @@
                 }
             }
 
-            if (active.length === 0) {
-                liveList.innerHTML = `<div class="file-card-empty">No live deployments found in the past 7 days.</div>`;
-                return;
-            }
-
-            liveList.innerHTML = active.map(liveCardHtml).join('');
+            liveList.innerHTML = (data.sources || []).map(src => {
+                const cards = active.filter(e => e.source === src.key);
+                const body = cards.length ? cards.map(liveCardHtml).join('')
+                    : `<div class="file-card-empty">${src.error ? 'Didn’t respond, retrying shortly…' : escapeHtmlSafe(src.empty || `None reporting in the past ${data.days_active || 7} days.`)}</div>`;
+                const note = src.error && cards.length ? `<div class="files-section-credit">Didn’t respond to the last scan; showing the previous list.</div>` : '';
+                const credit = `<a href="${escapeHtmlSafe(src.url)}" target="_blank" rel="noopener" title="${escapeHtmlSafe(src.credit_full || src.credit)}">${escapeHtmlSafe(src.credit)}</a>`;
+                return `<div class="live-source"><div class="live-source-head"><span class="live-source-title">${escapeHtmlSafe(src.title)}</span>` +
+                    `<span class="live-source-credit">${credit}</span></div>${note}${body}</div>`;
+            }).join('');
         }
 
-        // Tooltip rows for a failed live download: what BODC lists, how it answered, and the ERDDAP dataset's metadata.
+        // Tooltip rows for a failed live download: what the data centre lists, how it answered, and the ERDDAP dataset's metadata.
         function downloadFailureRows(e) {
             const d = e.download_details || {};
             const ds = d.dataset || {};
@@ -4827,7 +4858,7 @@
                 } else if (failed || updateFailed) {
                     const tipRows = esc(JSON.stringify(downloadFailureRows(e)));
                     metaLine = `<span class="file-card-error">${failed ? 'Download failed' : 'Update failed'}</span>` +
-                        `<span class="material-symbols-outlined file-card-info" data-tip="What BODC reports for this file" data-tip-rows="${tipRows}">info</span>`;
+                        `<span class="material-symbols-outlined file-card-info" data-tip="What the data centre reports for this file" data-tip-rows="${tipRows}">info</span>`;
                 } else {
                     metaLine = `<span>updated ${esc(ago)}</span>`;
                 }
@@ -4861,7 +4892,7 @@
                     <div class="file-card${isActive ? ' active' : ''}${disabled ? ' disabled' : ''}" data-id="${esc(e.file_id || '')}" data-bodc="${esc(e.filename)}">
                         <div class="file-card-icon ${iconClass}">${iconHtml || `<span class="material-symbols-outlined">${iconName}</span>`}</div>
                         <div class="file-card-body">
-                            <div class="file-card-name" title="${esc(e.filename)}">${esc(e.dataset)} <span class="nrt-badge" title="Live deployment: last sample within the past week">LIVE</span></div>
+                            <div class="file-card-name" title="${esc(e.filename)}">${esc(e.dataset)}${e.live === false ? '' : ' <span class="nrt-badge" title="Live deployment: last sample within the past week">LIVE</span>'}</div>
                             <div class="file-card-meta">${metaLine}</div>
                             ${progressBar}
                         </div>
@@ -4870,7 +4901,7 @@
                 `;
         }
 
-        // Seed the Live list from /api/files while the first BODC scan is in flight; renderLive() takes over.
+        // Seed the Live list from /api/files while the first scan is in flight; renderLive() takes over.
         function renderLivePlaceholders() {
             if (_liveData) return;
             const placeholders = fileRecords
@@ -4890,7 +4921,7 @@
                     progress: f.progress,
                 }));
             if (placeholders.length === 0) {
-                liveList.innerHTML = `<div class="file-card-empty">${_liveScanning ? 'Checking BODC…' : 'No live deployments found.'}</div>`;
+                liveList.innerHTML = `<div class="file-card-empty">${_liveScanning ? 'Checking…' : 'No live deployments found.'}</div>`;
                 return;
             }
             liveList.innerHTML = placeholders.map(liveCardHtml).join('');
@@ -4992,6 +5023,27 @@
             }
             showLivePlaceholder(entry);
             scheduleLivePoll();
+        }
+
+        // An Argo float's profile data: the server downloads it through the live feed (Files panel → Argo floats),
+        // then it opens like a live glider. On a busy server the request is refused with a message to try later.
+        async function openArgoFloat(wmo) {
+            let res, body = {};
+            try {
+                res = await fetch(`/api/argo/open/${encodeURIComponent(wmo)}`, { method: 'POST' });
+                body = await res.json().catch(() => ({}));
+            } catch (e) {
+                showActionToast('Couldn’t reach the server', null, 'error');
+                return;
+            }
+            if (!res.ok) {
+                showActionToast(body.detail || `Couldn’t open Argo float ${wmo}`, null, 'error');
+                return;
+            }
+            showActionToast(`Opening Argo float ${wmo}…`, null, 'download');
+            await refreshLive({ force: false });
+            if ((_liveData?.active || []).some(x => x.filename === body.filename)) await openLiveByFilename(body.filename);
+            else { _livePendingOpen = body.filename; scheduleLivePoll(); }      // the poll was busy: open on its next pass
         }
 
         async function bodcDelete(fn) {
@@ -5215,8 +5267,9 @@
             const id = g('id');
             const title = g('title') || id || g('trajectory') || 'Glider deployment';
 
-            // Real-time vs delayed: BODC ids end _R / _D; the title and rtqc method also flag it.
-            const isRealTime = /_R$/.test(id) || /real[\s-]?time/i.test(title) || /real[\s-]?time/i.test(g('rtqc_method'));
+            // Real-time vs delayed: BODC ids end _R / _D; the title and rtqc method also flag it, and so does coming from a live feed.
+            const rec = fileById(datasetSelect.value) || {};
+            const isRealTime = /_R$/.test(id) || /real[\s-]?time/i.test(title) || /real[\s-]?time/i.test(g('rtqc_method')) || !!rec.is_managed;
 
             const parseDate = (s) => { const d = new Date(s); return isNaN(d.getTime()) ? null : d; };
             const start = parseDate(g('time_coverage_start', 'date_created'));
@@ -5259,7 +5312,7 @@
             if (project) push('workspaces', 'Project', esc(project));
 
             // Platform identity.
-            push('travel_explore', 'Platform', esc(g('platform') || 'Glider'));
+            push('travel_explore', 'Platform', esc(g('platform') || PLATFORM_LABELS[rec.platform_kind] || 'Glider'));
             push('verified', 'Deployment', esc(g('internal_mission_identifier') || g('mission')));
 
             const statusPill = (start || end)
@@ -5552,6 +5605,7 @@
 
             buildQcChips();
             qcFlagsContainer.style.display = hasAnyQc ? 'flex' : 'none';
+            usePlatformPresets((fileById(fileId) || {}).platform);
             setViewSelectorEnabled(viewSelectorOn);   // Chemistry's availability depends on the variables
 
             const isValid = (val) => variableCache.some(v => (v.name === val || v.name === val + '_ADJUSTED') && !v.name.endsWith('_QC'));
@@ -5903,7 +5957,8 @@
         }
 
         // Platform icon markup for a file; '' = caller falls back to the material tick.
-        const PLATFORM_KINDS = ['slocum', 'seaglider', 'alr'];
+        const PLATFORM_KINDS = ['slocum', 'seaglider', 'alr', 'saildrone', 'argo'];
+        const PLATFORM_LABELS = { slocum: 'Slocum glider', seaglider: 'Seaglider', alr: 'Autosub Long Range', saildrone: 'Saildrone', argo: 'Argo float' };
         function platformKindFor(kind, name) {
             if (kind && PLATFORM_KINDS.includes(kind)) return kind;
             const n = String(name || '').toLowerCase();

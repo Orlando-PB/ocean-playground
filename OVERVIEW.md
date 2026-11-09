@@ -59,7 +59,10 @@ version is installable (`cli.py:_check_for_update`).
 
 ```
 glider_playground/
-  plot_presets.json   ← start here: plot presets, dashboard views, colour palettes (edit + restart)
+  plot_presets.json   ← start here: app name + colour palettes, shared by every platform (edit + restart)
+  platforms/          one module per platform type: which files it claims, what it derives, its
+                      plot presets + dashboard views, optional live feed (og1: gliders and ALRs;
+                      saildrone: NOAA PMEL Saildrones; argo: Argo float profile files, opened on demand)
   app.py              FastAPI app — every /api/* route
   cli.py              `glider-playground` entry point
   core/               data pipeline: cache_logic, plot_logic, derive_logic, spatial_logic,
@@ -110,7 +113,7 @@ file changes on disk or `CACHE_VERSION` bumps).
       BODC `ALATPT01`/`ALONPT01` → `LATITUDE_GPS`/`LONGITUDE_GPS`.
    6. **3D** — dive-track payload.
    7. **Plot prewarm** — default plot payloads (every preset with `prewarm: true` in
-      `plot_presets.json`) pre-computed into the binary plot cache so the first click is fast.
+      the file's platform presets) pre-computed into the binary plot cache so the first click is fast.
 3. Everything downstream (`core/plot_logic.py`'s `/api/plot_data`, map/3D endpoints) reads from this
    cache instead of re-opening NetCDF files.
 4. Orphan sweep: once the registry has loaded at startup, any entry in `preload/`, `derived/`,
@@ -219,7 +222,11 @@ This can be fully overhauled.
 
 `server/erddap_fetch.py` scans BODC's ERDDAP files index at `https://linkedsystems.uk/erddap/files/` for
 NetCDF files updated in the last `DAYS_ACTIVE` (7) days, matching suffix `_R.nc` ("real-time" OG1
-files), and downloads them into `DATA_DIR`.
+files), and downloads them into `DATA_DIR`. Platforms with a feed of their own add entries to the same
+scan through `Platform.live_entries` (today: `platforms/saildrone.py`, every NOAA PMEL Saildrone dataset
+with data in the last week, requested from tabledap as 5-minute means without the `*_rms` columns or
+angles — about a sixth of the raw size — and re-downloaded once PMEL is 6 h ahead of our copy). A
+platform's `normalise` renames the file in place before it lands in `DATA_DIR`.
 
 - **Discovery**: fetches ERDDAP's `.json` directory-listing format, walks dataset directories
   modified recently or named `*_R`, and keeps recently-modified `_R.nc` files. One background

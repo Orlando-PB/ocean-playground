@@ -41,6 +41,7 @@ from .maps import waypoint_logic
 from .server import server_config
 from .maps import ships_logic
 from . import missions
+from . import platforms
 
 server_config.configure_logging()
 logger = logging.getLogger(__name__)
@@ -427,8 +428,12 @@ def api_update_check(force: bool = False):
 
 
 @app.get("/api/live")
-def api_live(force: bool = False):
-    """Active gliders + uploads. Server-side cache prevents Pi flooding."""
+def api_live(force: bool = False, viewing: str = ""):
+    """Active gliders + uploads. Server-side cache prevents Pi flooding. `viewing`: the file id the page has
+    open (its once-a-minute heartbeat), so an opened Argo float in use is never evicted."""
+    rec = cache_logic.get_record(viewing) if viewing else None
+    if rec:
+        argo_logic.note_viewed(Path(rec["path"]).name)
     return erddap_fetch.list_live(force_scan=force)
 
 
@@ -456,6 +461,17 @@ def api_argo_floats(days: float = 30):
 @app.get("/api/argo/float/{wmo}")
 def api_argo_float(wmo: str):
     return argo_logic.float_detail(wmo)
+
+
+@app.post("/api/argo/open/{wmo}")
+def api_argo_open(wmo: str):
+    """Download a float's profile data through the live feed (see argo_logic.open_float)."""
+    try:
+        return argo_logic.open_float(wmo)
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except argo_logic.Busy as e:
+        raise HTTPException(status_code=429, detail=str(e))
 
 
 @app.get("/api/argo/profiles")
@@ -602,12 +618,15 @@ def api_3d_track(id: str):
 @app.get("/api/3d_colours")
 def api_3d_colours(id: str):
     """Presets this file's 3D track can be coloured by (see spatial_logic.track_colour)."""
-    return {"options": spatial_logic.track_colour_options(_resolve_path(id))}
+    path = _resolve_path(id)
+    return {"options": spatial_logic.track_colour_options(path, platforms.of(cache_logic.get_record(id)))}
 
 
 @app.get("/api/3d_colour")
 def api_3d_colour(id: str, preset: str = "", var: str = "", cmap: str = ""):
-    return spatial_logic.track_colour(_resolve_path(id), preset or None, var or None, cmap or None)
+    path = _resolve_path(id)
+    platform = platforms.of(cache_logic.get_record(id))
+    return spatial_logic.track_colour(path, platform, preset or None, var or None, cmap or None)
 
 
 @app.get("/api/location")
@@ -633,10 +652,12 @@ def api_nearest_fix_by_coord(id: str, lat: float, lon: float):
 
 @app.get("/api/plot_presets.js")
 def api_plot_presets_js():
-    # glider_playground/plot_presets.json as a blocking script (window.GP_PLOT_PRESETS) so the
+    # plot_presets.json + every platform's presets as a blocking script (window.GP_PLOT_PRESETS) so the
     # pages have presets/palettes synchronously — no toolbar reflow after first paint.
     return Response(
-        presets_logic.as_script(), media_type="application/javascript", headers={"Cache-Control": "no-cache"}
+        presets_logic.as_script({p.name: p.presets() for p in platforms.PLATFORMS}, platforms.DEFAULT.name),
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-cache"},
     )
 
 

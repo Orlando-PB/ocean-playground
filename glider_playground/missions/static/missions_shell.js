@@ -70,7 +70,7 @@
         const msg = e.data;
         if (!msg || e.source !== frame.contentWindow) return;
         if (msg.type === 'missionOpen') show(msg.id || '', true);
-        if (msg.type === 'requestActivate' && msg.from === 'mission') {       // the shell's own handler selects the file
+        if ((msg.type === 'requestActivate' || msg.type === 'openArgo') && msg.from === 'mission') {       // the shell's own handler opens the file
             show(null, true);
             if (typeof selectView === 'function') setTimeout(() => { try { selectView('classic'); } catch (_) {} }, 0);
         }

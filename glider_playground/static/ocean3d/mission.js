@@ -7,7 +7,7 @@ import { createLabels } from './labels.js';
 const id = new URLSearchParams(location.search).get('id');
 const api = `/api/missions/${encodeURIComponent(id)}`;
 const SEABED_GRID = 1000;      // seabed points along the box's longer side; fetched once per mission, then cached server-side
-const KIND_NAMES = { alr: 'Autosub Long Range (ALR)', slocum: 'Slocum glider', seaglider: 'Seaglider', argo: 'Argo float' };
+const KIND_NAMES = { alr: 'Autosub Long Range (ALR)', slocum: 'Slocum glider', seaglider: 'Seaglider', saildrone: 'Saildrone', argo: 'Argo float' };
 const SHIP_COLOUR = '#e8702a', STATION_COLOUR = '#0f8b8d', PLATFORM_COLOUR = '#d9c45c';
 const DAY = 24 * 3600e3;
 // Aft-deck cargo slots as fractions of the ship's hull length [x from midships (+ = bow), y to port]; DECK_LEN = cargo length (floats: height).
@@ -129,7 +129,7 @@ async function start() {
     };
     const open = p => {
         if (p.fileId) toShell({ type: 'requestActivate', id: p.fileId, from: 'mission' });
-        else if (p.wmo) window.open(`https://fleetmonitoring.euro-argo.eu/float/${encodeURIComponent(p.wmo)}`, '_blank', 'noopener');
+        else if (p.wmo) toShell({ type: 'openArgo', wmo: p.wmo, from: 'mission' });      // its profile data, via the shell's openArgoFloat
     };
     for (const p of mission.places || []) labels.add(`<div class="place ${esc(p.style || '')}">${esc(p.text)}</div>`, { anchor: anchorOf(p), layer: 'places' });
     (mission.stations || []).forEach((s, q) => labels.add(`<div class="place station" style="color:${esc(s.colour || STATION_COLOUR)}">${esc(s.label || '')}</div>`,
@@ -144,9 +144,11 @@ async function start() {
     }
     (mission.events || []).forEach((e, q) => { const time = e.time ? parseUTC(e.time) : null; labels.add(`<span class="badge pin">${q + 1}</span>`, { anchor: anchorOf(e.at), layer: 'events', time, offset: e.offset, onClick: time == null ? null : () => view.jumpTo(time) }); });
     for (const p of view.platforms) {
-        const node = labels.add(`<div class="tag ${p.showLabel || p.ship ? '' : 'quiet'}">${esc(p.label)}</div>`, { platform: p, drop: p.colour, onClick: p.fileId || p.wmo ? () => open(p) : null });
-        if (node) node.title = p.fileId ? 'Open this platform’s data' : p.wmo ? 'Open on Euro-Argo fleet monitoring' : '';
+        const node = labels.add(`<div class="tag ${p.showLabel || p.ship ? '' : 'quiet'}">${esc(p.label)}</div>`,
+            { platform: p, drop: p.colour, layer: p.float ? 'floatLabels' : undefined, onClick: p.fileId || p.wmo ? () => open(p) : null });
+        if (node) node.title = p.fileId ? 'Open this platform’s data' : p.wmo ? 'Open this float’s profile data' : '';
     }
+    labels.showLayer('floatLabels', false);      // a scene can hold dozens of floats: their tags are opt-in, from the key
     view.stage.beforeRender.push(camera => { labels.place(camera); });
 
     // ── Timeline card ──
@@ -186,6 +188,7 @@ async function start() {
     if (view.platforms.some(p => p.float)) {
         section('argo', KIND_NAMES.argo + 's', 'floats');
         html.push(`<div class="krow sub" data-layer="traces"><span class="sw"><i style="border-top:3px dotted ${esc((mission.floats || {}).colour || STATION_COLOUR)}"></i></span><span>Dives between surfacings</span>${eye}</div>`);
+        html.push(`<div class="krow sub hiddenRow" data-layer="floatLabels"><span class="sw"><b style="font-size:10px;color:var(--muted)">Abc</b></span><span title="Click a float’s tag to open its profile data">Name tags</span>${eye}</div>`);
     }
     const layers = (mission.stations || []).map((st, q) => ['station:' + q, st.label || 'Station', `<i style="border-top:3px dashed ${esc(st.colour || STATION_COLOUR)}"></i>`]);
     if ((mission.stages || []).length) layers.push(['stages', 'Stage labels', `<span class="klogo"><img src="${stageIcon}" alt=""></span>`]);

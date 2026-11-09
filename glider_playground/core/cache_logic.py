@@ -9,7 +9,7 @@ and a restart is warm. Same locally and on the server. Disk cost is roughly
 the file's uncompressed size.
 
 Also holds the plot-response cache (small RAM LRU over a per-file disk store)
-and the default-plot prewarm driven by plot_presets.json.
+and the default-plot prewarm driven by each platform's presets (platforms/).
 
 A file's id is the SHA-256 of its absolute path. The registry persists to
 ~/.glider_playground/registry.json and finished payloads to a per-file
@@ -32,12 +32,11 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional
 
-import xarray as xr
-
 from . import plot_logic
 from . import spatial_logic
 from . import derive_logic
 from . import presets_logic
+from .. import platforms
 from ..server import server_config
 
 logger = logging.getLogger(__name__)
@@ -214,6 +213,7 @@ def _save_payload_sidecar(rec: dict):
         "last_time": rec.get("last_time"),
         "last_lat": rec.get("last_lat"),
         "last_lon": rec.get("last_lon"),
+        "platform": rec.get("platform"),
         "platform_kind": rec.get("platform_kind"),
         "payloads": {k: rec[k] for k in _PAYLOAD_KEYS if k in rec},
     }
@@ -255,6 +255,8 @@ def _load_payload_sidecar(rec: dict) -> set:
         rec["last_lat"] = body["last_lat"]
     if body.get("last_lon") is not None:
         rec["last_lon"] = body["last_lon"]
+    if body.get("platform") is not None:
+        rec["platform"] = body["platform"]
     if body.get("platform_kind") is not None:
         rec["platform_kind"] = body["platform_kind"]
     return set(body.get("done_steps") or [])
@@ -431,52 +433,16 @@ def _is_nrt(last_time_iso: Optional[str]) -> bool:
         return False
 
 
-# ---------- platform kind (icon) ----------
-
-# NERC B76 platform-vocabulary codes seen in BODC OG1 files → icon kind.
-_B76_KIND = {
-    "B7600001": "slocum",  # Teledyne Webb Research Slocum G2 glider
-    "B7600029": "slocum",  # Teledyne Webb Research Slocum G3S glider
-    "B7600002": "seaglider",  # Kongsberg Seaglider
-    "B7600021": "alr",  # NOC Autosub Long Range 1500
-}
-PLATFORM_KINDS = ("slocum", "seaglider", "alr")
-
-
-def _detect_platform_kind(path: str) -> str:
-    """'slocum' | 'seaglider' | 'alr' | '' from the file's global attributes.
-
-    Cheap (attrs only, no data read). Drives the platform icon shown on file
-    cards and map markers; '' means "unknown, use the generic marker".
-    """
-    try:
-        with xr.open_dataset(path, decode_times=False, decode_cf=False) as ds:
-            attrs = {str(k).lower(): str(v) for k, v in ds.attrs.items()}
-    except Exception:
-        return ""
-    vocab = attrs.get("platform_vocabulary", "")
-    for code, kind in _B76_KIND.items():
-        if code in vocab:
-            return kind
-    text = " ".join(
-        attrs.get(k, "") for k in ("platform_type", "platform_model", "platform", "instrument", "id", "title", "source")
-    ).lower()
-    text += " " + Path(path).name.lower()
-    if "slocum" in text:
-        return "slocum"
-    if "seaglider" in text or "sea glider" in text:
-        return "seaglider"
-    if "autosub" in text or "alr" in text.replace("_", " ").split() or Path(path).name.lower().startswith("alr"):
-        return "alr"
-    return ""
+# ---------- platform (module + icon kind) ----------
 
 
 def _ensure_platform_kind(rec: dict):
-    """Fill ``platform_kind`` once for ready records that predate the field."""
-    if rec.get("status") != STATUS_READY or "platform_kind" in rec:
+    """Fill ``platform`` / ``platform_kind`` once for ready records that predate the fields."""
+    if rec.get("status") != STATUS_READY or "platform" in rec:
         return
-    kind = _detect_platform_kind(rec.get("path", ""))
+    platform, kind = platforms.detect(rec.get("path", ""))
     with _lock:
+        rec["platform"] = platform.name
         rec["platform_kind"] = kind
         _persist_locked()
 
@@ -506,6 +472,7 @@ def _public_view(rec: dict) -> dict:
         "last_lon": rec.get("last_lon"),
         "is_nrt": _is_nrt(last_time),
         "is_managed": is_managed,
+        "platform": rec.get("platform") or platforms.DEFAULT.name,
         "platform_kind": rec.get("platform_kind") or "",
     }
 
@@ -753,6 +720,10 @@ def save_upload(name: str, content: bytes) -> dict:
         target = UPLOADS_DIR / f"{stem} ({counter}){suffix}"
         counter += 1
     target.write_bytes(content)
+    try:
+        platforms.normalise(str(target))
+    except Exception as e:
+        logger.warning("Could not normalise upload %s: %s", target.name, e)  # processing reports what's wrong
     return register_path(str(target))
 
 
@@ -940,7 +911,7 @@ def _prewarm_default_plots(rec: dict):
     path = rec.get("path")
     if not path or not Path(path).exists():
         return
-    var_names = set(plot_logic._get_var_names(path) or [])
+    var_names = plot_logic.names_with_data(path)
     if not var_names:
         return
 
@@ -958,7 +929,7 @@ def _prewarm_default_plots(rec: dict):
 
     # One (x, y, c) per prewarm-flagged preset the file can satisfy.
     combos = []
-    for xc, yc, cc in presets_logic.prewarm_candidates():
+    for xc, yc, cc in presets_logic.prewarm_candidates(platforms.of(rec).presets()):
         combo = (_resolve_first(xc, var_names), _resolve_first(yc, var_names), _resolve_first(cc, var_names))
         if all(combo) and combo not in combos:
             combos.append(combo)
@@ -1031,6 +1002,9 @@ def _process(file_id: str):
             _persist_locked()
         return
 
+    platform, rec["platform_kind"] = platforms.detect(p)
+    rec["platform"] = platform.name
+
     is_server = server_config.IS_SERVER
     _lower_worker_priority()
     done_steps = set(rec.get("_done_steps") or [])
@@ -1080,7 +1054,7 @@ def _process(file_id: str):
                     _set(rec, stage=stage_msg)
 
             try:
-                derive_logic.derive_all_extra_variables(p, log_cb=_derive_cb)
+                derive_logic.derive_all_extra_variables(p, platform.derive_steps, log_cb=_derive_cb)
             except Exception as e:
                 logger.warning("Derivation failed for %s: %s", p, e)
 
@@ -1135,7 +1109,6 @@ def _process(file_id: str):
                 last_iso = spatial_logic.get_last_time_iso(p)
                 if last_iso:
                     rec["last_time"] = last_iso
-                rec["platform_kind"] = _detect_platform_kind(str(p))
             finally:
                 spatial_logic._spatial_stage_cb = None
             _release_memory()

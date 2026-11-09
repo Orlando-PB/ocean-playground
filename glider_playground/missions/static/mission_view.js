@@ -24,7 +24,7 @@
     // ── Mission list: a hero strip + one card per mission with a live map thumbnail (same ocean tiles as the globe) ──
     const TILE = (z, x, y) => `https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer/tile/${z}/${y}/${x}`;
     const iconFor = kind => `/static/icons/${kind === 'rrs_discovery' ? 'rrs-discovery' : kind === 'rrs_james_cook' ? 'rrs-james-cook' : /^rrs|ship/.test(kind) ? 'ship' : kind}-mapicon.svg`;
-    const KIND_NAMES = { alr: 'ALR', slocum: 'Slocum', seaglider: 'Seaglider' };
+    const KIND_NAMES = { alr: 'ALR', slocum: 'Slocum', seaglider: 'Seaglider', saildrone: 'Saildrone' };
     function drawThumb(box, pv) {
         if (!pv || !pv.bounds) return;
         const W = box.clientWidth || 340, H = box.clientHeight || 210, b = pv.bounds;

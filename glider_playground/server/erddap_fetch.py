@@ -27,6 +27,7 @@ from urllib.parse import urljoin
 
 import requests
 
+from .. import platforms
 from ..core import cache_logic
 
 SERVER_FILES_URL = "https://linkedsystems.uk/erddap/files/"
@@ -40,6 +41,15 @@ HTTP_TIMEOUT = 15
 LISTING_TIMEOUT = 6  # seconds per directory-listing attempt
 LISTING_ATTEMPTS = 3
 
+# Each data centre gets its own block in the Files panel's Live section, with its own credit line.
+BODC_SOURCE = {
+    "key": "bodc",
+    "title": "BODC gliders",
+    "credit": "Data provided by BODC",
+    "credit_full": "Live data provided by the British Oceanographic Data Centre (BODC).",
+    "url": "https://platforms.bodc.ac.uk/deployment-catalogue/",
+}
+
 MARKER_FILE = cache_logic.DATA_DIR / ".glider_playground_managed.json"
 # Gliders the user "binned": never auto-download these again until they ask
 # for one explicitly (a manual download clears the suppression).
@@ -48,7 +58,7 @@ SUPPRESS_FILE = cache_logic.DATA_DIR / ".glider_playground_suppressed.json"
 log = logging.getLogger(__name__)
 
 _lock = threading.RLock()
-_scan_cache: dict = {"at": 0.0, "data": None, "scanning": True, "error": False}
+_scan_cache: dict = {"at": 0.0, "data": None, "scanning": True, "error": False, "errors": {}}
 _wake = threading.Event()  # set by the Refresh button to scan now
 _in_flight: set[str] = set()  # filenames currently downloading
 # filename -> {"error", "server_mtime", "gone"} for its last failed download (shown on its card until retried).
@@ -56,6 +66,8 @@ _in_flight: set[str] = set()  # filenames currently downloading
 _failed: dict[str, dict] = {}
 _scanner_started = False
 _executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="live-dl")
+# Downloads a user clicked for (a card's download button, an opened Argo float) never queue behind the feed's own.
+_user_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="live-dl-user")
 
 
 # ---------- managed-file marker ----------
@@ -155,8 +167,8 @@ def _erddap_listing(base_url: str) -> Optional[list]:
     return None
 
 
-def _scan_active(previous: Optional[list] = None) -> Optional[list[dict]]:
-    """Find recent _R.nc files across the ERDDAP server. None if the server is
+def _scan_bodc(previous: Optional[list] = None) -> Optional[list[dict]]:
+    """Find recent _R.nc files across BODC's ERDDAP server. None if the server is
     unreachable; a single failed folder keeps its entries from `previous`
     instead of silently dropping that glider."""
     cutoff = time.time() - DAYS_ACTIVE * 86400
@@ -187,16 +199,37 @@ def _scan_active(previous: Optional[list] = None) -> Optional[list[dict]]:
                     "url": urljoin(SERVER_FILES_URL, name) + f["name"],
                     "server_mtime": f["last_modified"],
                     "size": f["size"],
+                    "source": BODC_SOURCE["key"],
                 }
             )
-    out.sort(key=lambda x: x["server_mtime"], reverse=True)
     return out
+
+
+def _sources() -> list[dict]:
+    return [BODC_SOURCE] + [p.live_source for p in platforms.PLATFORMS if p.live_source]
+
+
+def _scan_active(previous: Optional[list] = None) -> tuple[list[dict], dict]:
+    """Every source's recent files (BODC's, plus each platform's own feed, e.g. Saildrones from PMEL), and
+    {source key: True} for the ones that didn't answer; those keep their entries from `previous`."""
+    out, errors = [], {}
+
+    def add(key, entries):
+        errors[key] = entries is None
+        out.extend(entries if entries is not None else [e for e in previous or [] if e.get("source") == key])
+
+    add(BODC_SOURCE["key"], _scan_bodc(previous))
+    for platform in platforms.PLATFORMS:
+        if platform.live_source:
+            add(platform.live_source["key"], platform.live_entries(DAYS_ACTIVE))
+    out.sort(key=lambda x: x["server_mtime"], reverse=True)
+    return out, errors
 
 
 # ---------- download / update ----------
 
 
-def _download_to_data_dir(url: str, filename: str, server_mtime: float) -> Path:
+def _download_to_data_dir(url: str, filename: str, server_mtime: float, platform: str = "") -> Path:
     target = cache_logic.DATA_DIR / filename
     cache_logic.DATA_DIR.mkdir(parents=True, exist_ok=True)
     tmp = target.with_suffix(target.suffix + ".part")
@@ -207,6 +240,8 @@ def _download_to_data_dir(url: str, filename: str, server_mtime: float) -> Path:
                 for chunk in r.iter_content(chunk_size=1 << 16):
                     if chunk:
                         f.write(chunk)
+        if platform:
+            platforms.normalise(str(tmp), platforms.get(platform))
         os.replace(tmp, target)
     except Exception:
         tmp.unlink(missing_ok=True)
@@ -246,10 +281,15 @@ DATASET_FIELDS = (
 )
 
 
-def _dataset_info(dataset: str) -> dict:
+def _dataset_info(entry: dict) -> dict:
     """The dataset's global attributes from ERDDAP that help a data manager place a failed file, or {}."""
+    url = entry.get("info_url")
+    if not url and entry.get("source", BODC_SOURCE["key"]) == BODC_SOURCE["key"]:
+        url = f"{SERVER_INFO_URL}{entry['dataset']}/index.json"
+    if not url:
+        return {}
     try:
-        r = requests.get(f"{SERVER_INFO_URL}{dataset}/index.json", timeout=HTTP_TIMEOUT)
+        r = requests.get(url, timeout=HTTP_TIMEOUT)
         r.raise_for_status()
         rows = r.json()["table"]["rows"]
     except Exception:
@@ -265,7 +305,7 @@ def _failure_details(entry: dict, error: Exception) -> dict:
     if response is not None:
         details["http_status"] = response.status_code
         details["answered_by"] = response.headers.get("Server", "")
-    details["dataset"] = _dataset_info(entry["dataset"])
+    details["dataset"] = _dataset_info(entry)
     return details
 
 
@@ -273,7 +313,15 @@ def _download_and_register(entry: dict):
     """Worker task: fetch the file, register it with the cache, mark as managed."""
     fname = entry["filename"]
     try:
-        target = _download_to_data_dir(entry["url"], fname, entry["server_mtime"])
+        try:
+            target = _download_to_data_dir(entry["url"], fname, entry["server_mtime"], entry.get("platform", ""))
+        except requests.HTTPError as e:
+            # e.g. an Argo float with no BGC (Sprof) file: take its core one.
+            if not (entry.get("fallback_url") and e.response is not None and e.response.status_code == 404):
+                raise
+            target = _download_to_data_dir(
+                entry["fallback_url"], fname, entry["server_mtime"], entry.get("platform", "")
+            )
         cache_logic.register_path(str(target))
     except Exception as e:
         gone = isinstance(e, requests.HTTPError) and e.response is not None and e.response.status_code == 404
@@ -289,14 +337,14 @@ def _download_and_register(entry: dict):
             _in_flight.discard(fname)
 
 
-def _enqueue_download(entry: dict):
+def _enqueue_download(entry: dict, asked: bool = False):
     fname = entry["filename"]
     with _lock:
         if fname in _in_flight:
             return False
         _in_flight.add(fname)
         _failed.pop(fname, None)
-    _executor.submit(_download_and_register, entry)
+    (_user_executor if asked else _executor).submit(_download_and_register, entry)
     return True
 
 
@@ -308,7 +356,7 @@ def request_download(filename: str) -> dict:
     if entry is None:
         return {"status": "error", "message": "File not found in active listing"}
     _remove_suppressed(filename)  # an explicit download un-bins the glider
-    started = _enqueue_download(entry)
+    started = _enqueue_download(entry, asked=True)
     return {"status": "queued" if started else "in_flight", "filename": filename}
 
 
@@ -319,15 +367,16 @@ def _scan_once():
     with _lock:
         previous = _scan_cache["data"]
         _scan_cache["scanning"] = True
-    listing = None
+    listing, errors = None, {}
     try:
-        listing = _scan_active(previous)
+        listing, errors = _scan_active(previous)
     except Exception:
         log.exception("Live scan failed")
     finally:
         with _lock:
             _scan_cache["scanning"] = False
-            _scan_cache["error"] = listing is None
+            _scan_cache["error"] = listing is None or any(errors.values())
+            _scan_cache["errors"] = errors
             if listing is not None:
                 _scan_cache.update(at=time.time(), data=listing)
     if listing is not None:
@@ -382,18 +431,42 @@ def _sync_managed_files(listing: list[dict]):
         info = marker.get(fname)
         if info is None:
             _enqueue_download(entry)  # new active glider → download it
-        elif entry["server_mtime"] > float(info.get("server_mtime", 0)) + 1:
+        elif entry["server_mtime"] > float(info.get("server_mtime", 0)) + entry.get("refresh_after", 1):
             _enqueue_download(entry)  # have it, but server has a newer copy
 
     cutoff = now - PRUNE_DAYS * 86400
+    listed = {e["filename"] for e in listing}  # e.g. an opened Argo float whose last profile is years old
     for fname, info in marker.items():
-        if fname in _in_flight:
+        if fname in _in_flight or fname in listed:
             continue
         if float(info.get("server_mtime", 0)) < cutoff:
             _remove_managed_file(fname)  # not updated for PRUNE_DAYS
 
 
 # ---------- public API ----------
+
+
+def add_live_entry(entry: dict):
+    """Serve one more file through the live feed now, without waiting for a scan (an Argo float the user opened)."""
+    fname = entry["filename"]
+    _remove_suppressed(fname)
+    with _lock:
+        _scan_cache["data"] = [e for e in _scan_cache["data"] or [] if e["filename"] != fname] + [entry]
+        info = _load_marker().get(fname)
+    if info is None or entry["server_mtime"] > float(info.get("server_mtime", 0)) + entry.get("refresh_after", 1):
+        _enqueue_download(entry, asked=True)
+
+
+def remove_managed(filename: str):
+    """Delete a managed file without binning it (it may be asked for again)."""
+    with _lock:
+        _scan_cache["data"] = [e for e in _scan_cache["data"] or [] if e["filename"] != filename]
+    _remove_managed_file(filename)
+
+
+def downloading_count(source: str) -> int:
+    with _lock:
+        return sum(1 for e in _scan_cache["data"] or [] if e.get("source") == source and e["filename"] in _in_flight)
 
 
 def list_live(force_scan: bool = False) -> dict:
@@ -411,6 +484,8 @@ def list_live(force_scan: bool = False) -> dict:
 
     # Active gliders (server-detected)
     active = []
+    # BODC/PMEL only list recent files, but an opened Argo float may be long finished.
+    recent = time.time() - DAYS_ACTIVE * 86400
     for e in listing:
         fname = e["filename"]
         target = cache_logic.DATA_DIR / fname
@@ -421,12 +496,14 @@ def list_live(force_scan: bool = False) -> dict:
         active.append(
             {
                 "kind": "live",
+                "source": e.get("source", BODC_SOURCE["key"]),
                 "dataset": e["dataset"],
                 "filename": fname,
                 "server_mtime": e["server_mtime"],
                 "downloaded": downloaded,
                 "managed": downloaded,
-                "needs_update": downloaded and e["server_mtime"] > local_mtime + 1,
+                "live": e["server_mtime"] >= recent,
+                "needs_update": downloaded and e["server_mtime"] > local_mtime + e.get("refresh_after", 1),
                 "downloading": fname in in_flight,
                 "download_error": (failed.get(fname) or {}).get("error"),
                 "download_details": (failed.get(fname) or {}).get("details"),
@@ -467,6 +544,7 @@ def list_live(force_scan: bool = False) -> dict:
         "scanned_at": _scan_cache.get("at", 0),
         "scanning": _scan_cache["scanning"] or _wake.is_set(),
         "scan_error": _scan_cache["error"],
+        "sources": [{**s, "error": bool(_scan_cache["errors"].get(s["key"]))} for s in _sources()],
         "days_active": DAYS_ACTIVE,
         "active": active,
         "uploads": uploads,

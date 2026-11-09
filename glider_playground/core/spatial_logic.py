@@ -1010,11 +1010,11 @@ def generate_3d_data(filepath):
 TRACK_COLOUR_MAX_GAP = 40  # track points (of ~20k per file) a missing colour value may be interpolated across
 
 
-def _track_colour_presets(filepath):
-    """Presets usable as a 3D track colour for this file: time-section presets with a continuous palette whose
-    colour variable is present. -> [(preset key, preset, variable name)]"""
-    cfg = presets_logic.load()
-    names = set(plot_logic._get_var_names(filepath) or [])
+def _track_colour_presets(filepath, platform):
+    """Presets usable as a 3D track colour for this file: time-section presets of its platform with a continuous
+    palette whose colour variable is present. -> [(preset key, preset, variable name)]"""
+    cfg = platform.presets()
+    names = plot_logic.names_with_data(filepath)
     time_axis = set(presets_logic._candidates(cfg, "time"))
     out = []
     for key, p in cfg.get("presets", {}).items():
@@ -1028,10 +1028,10 @@ def _track_colour_presets(filepath):
     return out
 
 
-def track_colour_options(filepath) -> list:
+def track_colour_options(filepath, platform) -> list:
     return [
         {"key": k, "label": p.get("label", k), "var": v, "cmap": p.get("cmap")}
-        for k, p, v in _track_colour_presets(filepath)
+        for k, p, v in _track_colour_presets(filepath, platform)
     ]
 
 
@@ -1039,12 +1039,12 @@ _track_colour_cache = {}  # (path, size, mtime, var) -> result sans preset field
 _TRACK_COLOUR_CACHE_MAX = 24
 
 
-def track_colour(filepath, preset_key=None, var=None, cmap=None) -> dict:
+def track_colour(filepath, platform, preset_key=None, var=None, cmap=None) -> dict:
     """One value per 3D-track point for a colour variable (a preset's, or any numeric `var` so the 3D view can
     follow a plot): the mean of the raw samples each track point stands for (sparse sensors would otherwise
     mostly miss the sampled rows). Limits are the 2nd-98th percentiles."""
     if preset_key:
-        hit = next(((p, v) for k, p, v in _track_colour_presets(filepath) if k == preset_key), None)
+        hit = next(((p, v) for k, p, v in _track_colour_presets(filepath, platform) if k == preset_key), None)
         if not hit:
             return {"error": "Not available for this file"}
         preset, var = hit

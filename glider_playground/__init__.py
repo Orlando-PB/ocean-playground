@@ -1,1 +1,1 @@
-"""Ocean Playground — see app.py (API), cli.py (entry point) and plot_presets.json (editable plot/view/palette config)."""
+"""Ocean Playground — see app.py (API), cli.py (entry point) plot_presets.json (app name, palettes) and platforms/ (per-platform presets and views)."""

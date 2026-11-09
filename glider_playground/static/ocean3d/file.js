@@ -10,7 +10,7 @@ const FLOAT_MARGIN_DAYS = 10;
 // Vehicle to draw: the detected platform kind, then name heuristics; a Slocum if unknown.
 function modelFor(rec) {
     const kind = rec.platform_kind, n = String(rec.name || '').toLowerCase();
-    if (['slocum', 'seaglider', 'alr'].includes(kind)) return kind;
+    if (['slocum', 'seaglider', 'alr', 'saildrone', 'argo'].includes(kind)) return kind;
     return /^alr[_\-\d]/.test(n) ? 'alr' : /^(sg\d|seaglider)/.test(n) ? 'seaglider' : 'slocum';
 }
 
@@ -64,7 +64,12 @@ async function start() {
     // Every Argo float that surfaces in the box while the vehicle is out (a cycle's margin either side). Never blocks the view.
     const lons = seabed.bathy_lon, lats = seabed.bathy_lat, margin = FLOAT_MARGIN_DAYS * 864e5;
     getJSON(`/api/argo/profiles?min_lat=${lats[0]}&max_lat=${lats[lats.length - 1]}&min_lon=${lons[0]}&max_lon=${lons[lons.length - 1]}&t0=${t0 - margin}&t1=${t1 + margin}`)
-        .then(res => res.status === 'ready' ? view.addFloats(byFloat(res.profiles)) : console.info('Argo index:', res.status)).catch(console.error);
+        .then(res => {
+            if (res.status !== 'ready') return console.info('Argo index:', res.status);
+            const floats = byFloat(res.profiles);
+            if (rec.platform === 'argo') delete floats[rec.name.replace(/^argo_|\.nc$/g, '')];      // this file's own float
+            return view.addFloats(floats);
+        }).catch(console.error);
     // Track colour: the file's presets, or whatever variable the shell's selected plot shows ("followColour").
     let follow = null, legend = null;
     const followPlot = () => { if (legend && follow && follow.var) legend.choose({ key: `var:${follow.var}`, label: follow.var, cmap: follow.cmap || 'thermal', var: follow.var }); };

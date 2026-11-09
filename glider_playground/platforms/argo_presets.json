@@ -1,0 +1,166 @@
+{
+  "_help": [
+    "PLOT PRESETS and DASHBOARD VIEWS for Argo floats (the argo platform, platforms/argo.py). Variable names are the Argo GDAC ones (PRES, TEMP, PSAL, DOXY, CHLA, ...); each profile's levels share its time, so time-depth plots show one column per profile. Same format as og1_presets.json (see its _help); the app name and colour palettes are shared, in glider_playground/plot_presets.json. Restart the app after editing."
+  ],
+  "axes": {
+    "time": ["TIME"],
+    "depth": ["PRES"]
+  },
+  "presets": {
+    "preset_argo_temp": {
+      "label": "Thermal",
+      "icon": "thermostat",
+      "colour": "red",
+      "x": "time",
+      "y": "depth",
+      "c": ["TEMP", "CONS_TEMP"],
+      "cmap": "temp",
+      "invert_y": true,
+      "prewarm": true,
+      "group": "Physics"
+    },
+    "preset_argo_sal": {
+      "label": "Salinity",
+      "icon": "water_drop",
+      "colour": "blue",
+      "x": "time",
+      "y": "depth",
+      "c": ["PSAL", "ABS_SALINITY"],
+      "cmap": "sal",
+      "invert_y": true,
+      "prewarm": true,
+      "group": "Physics"
+    },
+    "preset_argo_density": {
+      "label": "Density",
+      "icon": "layers",
+      "colour": "indigo",
+      "x": "time",
+      "y": "depth",
+      "c": ["DENSITY"],
+      "cmap": "dense",
+      "invert_y": true,
+      "prewarm": true,
+      "group": "Physics"
+    },
+    "preset_argo_ts": {
+      "label": "T-S Diagram",
+      "icon": "scatter_plot",
+      "colour": "purple",
+      "x": ["PSAL", "ABS_SALINITY"],
+      "y": ["TEMP", "CONS_TEMP"],
+      "c": "depth",
+      "cmap": "deep",
+      "invert_y": false,
+      "group": "Physics"
+    },
+    "preset_argo_temp_profile": {
+      "label": "Temperature profiles",
+      "icon": "show_chart",
+      "colour": "red",
+      "x": ["TEMP"],
+      "y": "depth",
+      "c": ["PROFILE_NUMBER"],
+      "cmap": "deep",
+      "invert_y": true,
+      "group": "Physics"
+    },
+    "preset_argo_doxy": {
+      "label": "Oxygen",
+      "icon": "air",
+      "colour": "cyan",
+      "x": "time",
+      "y": "depth",
+      "c": ["DOXY"],
+      "cmap": "oxy",
+      "invert_y": true,
+      "group": "Bio-optics"
+    },
+    "preset_argo_chla": {
+      "label": "Chlorophyll",
+      "icon": "grass",
+      "colour": "green",
+      "x": "time",
+      "y": "depth",
+      "c": ["CHLA"],
+      "cmap": "chla",
+      "invert_y": true,
+      "draw_order": "outliers",
+      "group": "Bio-optics"
+    },
+    "preset_argo_bbp": {
+      "label": "Backscatter",
+      "icon": "blur_on",
+      "colour": "amber",
+      "x": "time",
+      "y": "depth",
+      "c": ["BBP700", "BBP532", "BBP470"],
+      "cmap": "bbp",
+      "invert_y": true,
+      "draw_order": "outliers",
+      "group": "Bio-optics"
+    },
+    "preset_argo_cdom": {
+      "label": "CDOM",
+      "icon": "opacity",
+      "colour": "amber",
+      "x": "time",
+      "y": "depth",
+      "c": ["CDOM"],
+      "cmap": "matter",
+      "invert_y": true,
+      "group": "Bio-optics"
+    },
+    "preset_argo_par": {
+      "label": "PAR",
+      "icon": "sunny",
+      "colour": "yellow",
+      "x": "time",
+      "y": "depth",
+      "c": ["DOWNWELLING_PAR"],
+      "cmap": "sunset",
+      "invert_y": true,
+      "draw_order": "outliers",
+      "group": "Bio-optics"
+    },
+    "preset_argo_nitrate": {
+      "label": "Nitrate",
+      "icon": "eco",
+      "colour": "green",
+      "x": "time",
+      "y": "depth",
+      "c": ["NITRATE"],
+      "cmap": "tempo",
+      "invert_y": true,
+      "group": "Chemistry"
+    },
+    "preset_argo_ph": {
+      "label": "pH",
+      "icon": "water_ph",
+      "colour": "purple",
+      "x": "time",
+      "y": "depth",
+      "c": ["PH_IN_SITU_TOTAL"],
+      "cmap": "haline",
+      "invert_y": true,
+      "group": "Chemistry"
+    }
+  },
+  "views": {
+    "default_preset": "preset_argo_temp",
+    "new_plot_order": ["preset_argo_temp", "preset_argo_sal", "preset_argo_density", "preset_argo_doxy", "preset_argo_chla", "preset_argo_ts"],
+    "invert_y_vars": ["PRES"],
+    "overview": ["preset_argo_temp", "preset_argo_sal", "preset_argo_density", "preset_argo_doxy"],
+    "dashboard": ["preset_argo_temp", "preset_argo_sal", "preset_argo_density", "preset_argo_doxy", "preset_argo_chla", "preset_argo_ts"],
+    "biooptics": [
+      { "preset": "preset_argo_temp", "draw_order": "normal" },
+      { "preset": "preset_argo_chla", "draw_order": "smallest" },
+      { "preset": "preset_argo_chla", "draw_order": "largest" },
+      { "preset": "preset_argo_bbp", "draw_order": "smallest" },
+      { "preset": "preset_argo_bbp", "draw_order": "largest" },
+      { "preset": "preset_argo_par", "draw_order": "outliers" }
+    ],
+    "chemistry": ["preset_argo_doxy", "preset_argo_nitrate", "preset_argo_ph", "preset_argo_cdom"],
+    "duo": ["preset_argo_temp", "preset_argo_sal"]
+  }
+}

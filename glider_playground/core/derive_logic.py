@@ -150,7 +150,7 @@ def provided(n, existing):
 # ---------------------------------------------------------------------------
 
 
-def _compute_time_qc(filepath, log, names, existing, time_var):
+def compute_time_qc(filepath, log, names, existing, time_var):
     """Derive a QC flag for TIME once per file, so TIME can be filtered by the
     same QC-flag chips as everything else instead of a separate "Filter Time"
     toggle: NaT -> 9 (missing), a timestamp that runs backwards relative to
@@ -209,7 +209,7 @@ def _compute_time_qc(filepath, log, names, existing, time_var):
     return [qc_name], {qc_name: qc}, meta
 
 
-def _compute_ctd(filepath, log, names, existing, time_var, suffix=""):
+def compute_ctd(filepath, log, names, existing, time_var, suffix=""):
     """Salinity/density from the main CTD, or with suffix "2" from a second CTD
     (CNDC2/TEMP2/PRES2, e.g. SixSense)."""
     outputs = tuple(name + suffix for name in ("PRAC_SALINITY", "ABS_SALINITY", "CONS_TEMP", "DENSITY"))
@@ -335,6 +335,60 @@ def _compute_ctd(filepath, log, names, existing, time_var, suffix=""):
                 "description": f"Quality flag for {name} (1=good, 9=missing; derived)",
             }
 
+    return wanted, arrays, meta
+
+
+def compute_ctd_from_psal(filepath, log, names, existing, time_var):
+    """Absolute salinity, conservative temperature and density for files that carry practical
+    salinity (PSAL) instead of conductivity, e.g. Argo floats. Each output's QC is the worst of
+    its inputs' bad flags (3/4), else 1, or 9 where it couldn't be computed."""
+    outputs = ("ABS_SALINITY", "CONS_TEMP", "DENSITY")
+    wanted = [n for n in outputs if not provided(n, existing)]
+    if not wanted or not _HAS_GSW:
+        return [], {}, {}
+    inputs = {}
+    for v in ("PSAL", "TEMP", "PRES"):
+        adjusted = v + "_ADJUSTED"
+        candidates = [adjusted, v] if adjusted in existing else [v]
+        data = plot_logic._read_vars_cached(filepath, tuple(candidates)) or {}
+        found = next((c for c in candidates if c in data and np.isfinite(data[c]).any()), None)
+        if found is None:
+            return [], {}, {}
+        inputs[v] = found
+    lat_name, lon_name = spatial_logic._resolve_latlon_names(names)
+    if not lat_name or not lon_name:
+        log("No LATITUDE/LONGITUDE - skipping CTD derivation")
+        return [], {}, {}
+
+    qc_names = [inputs[v] + "_QC" for v in inputs if inputs[v] + "_QC" in existing]
+    data = plot_logic._read_vars_cached(filepath, tuple(sorted({*inputs.values(), *qc_names, lat_name, lon_name})))
+    psal, temp, pres = (np.asarray(data[inputs[v]], dtype=float) for v in ("PSAL", "TEMP", "PRES"))
+    lat = np.asarray(data[lat_name], dtype=float)
+    lon = np.asarray(data[lon_name], dtype=float)
+
+    log(f"CTD derive: computing {', '.join(wanted)} from {inputs['PSAL']} via GSW")
+    sa = gsw.SA_from_SP(psal, pres, lon, lat)
+    ct = gsw.CT_from_t(sa, temp, pres)
+    computed = {"ABS_SALINITY": sa, "CONS_TEMP": ct, "DENSITY": gsw.rho(sa, ct, pres)}
+
+    input_qc = np.ones(len(pres), dtype=np.int8)
+    for name in qc_names:
+        flags = np.asarray(data[name], dtype=np.int8)
+        input_qc = np.maximum(input_qc, np.where(np.isin(flags, (3, 4)), flags, 1))
+
+    arrays, meta = {}, {}
+    for name in wanted:
+        arr = np.asarray(computed[name], dtype=float)
+        arrays[name] = arr
+        meta[name] = {**DERIVED_METADATA[name], "type": "numeric"}
+        qc_name = name + "_QC"
+        if qc_name not in existing:
+            arrays[qc_name] = np.where(np.isfinite(arr), input_qc, 9).astype(np.int8)
+            meta[qc_name] = {
+                "units": "1",
+                "type": "numeric",
+                "description": f"Quality flag for {name} (1=good, 3/4=from a probably bad/bad input, 9=missing; derived)",
+            }
     return wanted, arrays, meta
 
 
@@ -510,7 +564,7 @@ def _classify_profiles(df_raw, depth_col, transect_phase=_PARKING):
     ``transect_phase``: the SCI_PHASE assigned to a long, flat, non-surface
     "unknown" stretch — ``_PROPELLED`` (6) for ALR-class platforms, which
     genuinely have thrusters, ``_PARKING`` (4) for anything else, which can
-    only be drifting. Caller decides which (see ``_compute_profiles``).
+    only be drifting. Caller decides which (see ``compute_profiles``).
     """
     df = df_raw.dropna(subset=["TIME", depth_col]).sort_values("TIME")
 
@@ -584,7 +638,7 @@ def _classify_profiles(df_raw, depth_col, transect_phase=_PARKING):
     return out
 
 
-def _compute_profiles(filepath, log, names, existing, time_var):
+def compute_profiles(filepath, log, names, existing, time_var):
     wanted = [
         n
         for n in ("SCI_PHASE", "PROFILE_NUMBER", "PROFILE_DIRECTION", "CYCLE", "PROFILE_GRADIENT")
@@ -656,7 +710,7 @@ def _compute_profiles(filepath, log, names, existing, time_var):
     return wanted, arrays, meta
 
 
-def _compute_backscatter(filepath, log, names, existing, time_var):
+def compute_backscatter(filepath, log, names, existing, time_var):
     """Derive a simple, visual-only particulate backscatter (BBP) from raw beta.
 
     Only runs when no backscatter product is already present (native or from an
@@ -744,9 +798,10 @@ def _compute_backscatter(filepath, log, names, existing, time_var):
 # ---------------------------------------------------------------------------
 
 
-def derive_all_extra_variables(filepath, log_cb=None):
-    """Entry point to calculate all CTD and profile variables at once,
-    saving to the derived store in a single operation."""
+def derive_all_extra_variables(filepath, steps, log_cb=None):
+    """Run a platform's derive steps (see platforms/) and save everything they make
+    to the derived store in a single operation. Each step is a ``(label, fn)`` pair;
+    ``fn(filepath, log, names, existing, time_var)`` returns ``(wanted, arrays, meta)``."""
 
     def log(msg):
         if log_cb:
@@ -768,45 +823,14 @@ def derive_all_extra_variables(filepath, log_cb=None):
     all_arrays = {}
     all_meta = {}
 
-    try:
-        tw, ta, tm = _compute_time_qc(filepath, log, names, existing, time_var)
-        all_wanted.extend(tw)
-        all_arrays.update(ta)
-        all_meta.update(tm)
-    except Exception as e:
-        log(f"TIME QC derivation failed ({e})")
-
-    try:
-        cw, ca, cm = _compute_ctd(filepath, log, names, existing, time_var)
-        all_wanted.extend(cw)
-        all_arrays.update(ca)
-        all_meta.update(cm)
-    except Exception as e:
-        log(f"CTD derivation failed ({e})")
-
-    try:
-        cw, ca, cm = _compute_ctd(filepath, log, names, existing, time_var, suffix="2")
-        all_wanted.extend(cw)
-        all_arrays.update(ca)
-        all_meta.update(cm)
-    except Exception as e:
-        log(f"Second CTD derivation failed ({e})")
-
-    try:
-        pw, pa, pm = _compute_profiles(filepath, log, names, existing, time_var)
-        all_wanted.extend(pw)
-        all_arrays.update(pa)
-        all_meta.update(pm)
-    except Exception as e:
-        log(f"Profile derivation failed ({e})")
-
-    try:
-        bw, ba, bm = _compute_backscatter(filepath, log, names, existing, time_var)
-        all_wanted.extend(bw)
-        all_arrays.update(ba)
-        all_meta.update(bm)
-    except Exception as e:
-        log(f"Backscatter derivation failed ({e})")
+    for label, step in steps:
+        try:
+            wanted, arrays, meta = step(filepath, log, names, existing, time_var)
+            all_wanted.extend(wanted)
+            all_arrays.update(arrays)
+            all_meta.update(meta)
+        except Exception as e:
+            log(f"{label} derivation failed ({e})")
 
     if all_arrays:
         plot_logic.save_derived(filepath, all_arrays, all_meta)

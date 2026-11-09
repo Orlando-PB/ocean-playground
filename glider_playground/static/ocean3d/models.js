@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 
 // Drawn size (longest side) as a fraction of the box width: nothing would be visible at true scale.
-const SIZES = { slocum: 0.011, seaglider: 0.011, seaexplorer: 0.011, spray: 0.011, alr: 0.019, argo: 0.008, ship: 0.0325, buoy: 0.014 };
+const SIZES = { slocum: 0.011, seaglider: 0.011, seaexplorer: 0.011, spray: 0.011, alr: 0.019, saildrone: 0.024, argo: 0.008, ship: 0.0325, buoy: 0.014 };
 const TURN_S = 0.35;      // wall-clock seconds for a vehicle to swing most of the way to a new attitude
 const cache = {};
 const fetchParts = name => cache[name] ||= fetch(`/static/3d_view/models/${name}.json`).then(r => { if (!r.ok) throw new Error(`model ${name}`); return r.json(); });
