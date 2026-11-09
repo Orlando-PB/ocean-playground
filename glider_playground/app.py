@@ -177,12 +177,20 @@ def _index_html() -> str:
 # every load so an auto-update never leaves users on stale code.
 _IMMUTABLE_SUFFIXES = (".min.js", ".woff", ".woff2", ".ttf", ".png", ".webp", ".svg", ".jpg", ".jpeg", ".gif", ".ico")
 
+_SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
+}
+
 
 @app.middleware("http")
 async def log_request_timing(request, call_next):
     t0 = time.time()
     response = await call_next(request)
     response.headers["X-Process-Time"] = str(time.time() - t0)
+    response.headers.update(_SECURITY_HEADERS)
 
     path = request.url.path
     if path == "/" or path.endswith(".html"):
