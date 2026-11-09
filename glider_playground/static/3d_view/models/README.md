@@ -23,6 +23,7 @@ Conventions: metres, true scale, coordinates rounded to 3 dp.
 | spray.json | 2.0 × 0.20 m, 1 m span | `hull`, `fins` |
 | seaexplorer.json | 2.0 × 0.25 m, 0.57 m span, 0.7 m antenna | `hull`, `fins` |
 | autonaut.json | 5 m hull | surface vehicle; several parts |
+| saildrone.json | 7.0 × 0.7 m hull, 2.3 × 2.3 m solar wing, 4.7 m above / 2.05 m below the waterline | Saildrone Explorer (solar-panel wing); surface vehicle, origin mid-hull at the waterline; `hull`, `panels`, `keel`, `mast`, `wing`, `cells` |
 | rrs_discovery.json | 99.7 × 18 m, draft 6.5 m | ship; several parts |
 | rrs_james_cook.json | 89.5 × 18.6 m, draft 5.5 m | ship; several parts |
 | rrs_sir_david_attenborough.json | 128.9 × 24 m, draft 7.5 m | ship; several parts |
@@ -37,8 +38,8 @@ Conventions: metres, true scale, coordinates rounded to 3 dp.
 
 ## In use
 
-Only the gliders/ALR are wired up today: `ocean3d/models.js` picks
-`slocum` / `seaglider` / `alr` from the file's detected platform kind and
+Only the gliders/ALR/Saildrone are wired up today: `ocean3d/models.js` picks
+`slocum` / `seaglider` / `alr` / `saildrone` from the file's detected platform kind and
 poses it along the track (heading from the track, pitch/roll from the file
 when present). Everything else is here for future layers (Argo floats, ships,
 moorings) and is loaded the same way — `fetch('/static/3d_view/models/<name>.json')`
@@ -51,7 +52,9 @@ heading (about z); translate; keep `i/j/k` unchanged and only update
 ## Regenerating
 
 The meshes come from a small Python generator (surfaces of revolution with
-12–16 segments, flat quads for fins, triangular prisms for rods) kept outside
-the repo. Sources: UW Seaglider spec sheet; NOC / Phillips et al. 2023 for
-ALR; NOC and BAS ship particulars. Fin/wing shapes are visual
-approximations, not engineering drawings.
+12–16 segments, flat quads for fins, triangular prisms for rods) kept
+outside the repo; the Saildrone has its own small generator (lofted hull
+from cross-sections, boxes and flat plates), also kept outside the repo.
+Sources: UW Seaglider spec sheet; NOC / Phillips et al. 2023 for ALR; NOC
+and BAS ship particulars; Saildrone Explorer published dimensions and
+photos. Fin/wing shapes are visual approximations, not engineering drawings.

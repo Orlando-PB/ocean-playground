@@ -26,6 +26,7 @@ ICONS = {
     "rrs-discovery": ("rrs_discovery", 0),
     "rrs-james-cook": ("rrs_james_cook", 0),
     "argo": ("argo", 12),
+    "saildrone": ("saildrone", 8),
 }
 OUTLINE = "#1b2229"
 OUTLINE_W = 0.7  # viewBox units
