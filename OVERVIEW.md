@@ -131,6 +131,7 @@ change alters cached output, and add a line here.
 
 | Version | Change |
 |---|---|
+| v36 | 3D track longitudes made continuous across the dateline (a track crossing 180° got a whole-world box and a line jumping across it); its seabed fetched past 180° |
 | v35 | derivation clears the derived store first, so a reprocess recomputes every derived variable (it used to skip ones already stored, keeping them stale, and dropped them when anything new was added) |
 | v34 | PRAC_SALINITY2, ABS_SALINITY2, CONS_TEMP2 and DENSITY2 derived from a second CTD (CNDC2/TEMP2/PRES2, e.g. SixSense) |
 | v33 | variable list flags all-NaN variables `empty`, so presets skip placeholder variables with no data; 3D payload no longer carries bathymetry (the seabed comes only from bathy_prefetch / `/api/3d_bathy`) |

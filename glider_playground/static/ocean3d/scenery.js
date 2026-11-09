@@ -101,7 +101,8 @@ export async function buildScenery(world) {
     const models = await loadBundle(), { size, lat0, lon0 } = world, random = rng(Math.round((lat0 * 1000 + lon0) * 7919));
     const shared = { uTime: { value: 0 }, uVertical: { value: 1 }, uPaths: { value: null } };
     const mat = material(shared, size), object = new THREE.Group();
-    const here = r => (r.region ? r.region.some(([a, b, c, d]) => lon0 >= a && lon0 <= b && lat0 >= c && lat0 <= d) : !r.lat || (Math.abs(lat0) >= r.lat[0] && Math.abs(lat0) <= r.lat[1]));
+    const lonW = ((lon0 + 180) % 360 + 360) % 360 - 180;      // regions are in ±180°; a box across the dateline runs past 180
+    const here = r => (r.region ? r.region.some(([a, b, c, d]) => lonW >= a && lonW <= b && lat0 >= c && lat0 <= d) : !r.lat || (Math.abs(lat0) >= r.lat[0] && Math.abs(lat0) <= r.lat[1]));
     const gauss = () => (random() + random() + random() - 1.5) * 1.15;
 
     // A lane for a swimmer of length `len` at scene depth `y`: a straight line right across the box, edge to edge (and

@@ -167,6 +167,21 @@ def _fetch_bathy_nc(url, var):
     return lats, lons, z
 
 
+def _fetch_bathy_primary(dataset, var, lat0, lat1, lon0, lon1, stride, per_deg):
+    """The coastwatch grid runs -180–180°, so a box past 180° is fetched in two halves, the east one shifted up by 360."""
+    if lon1 <= 180:
+        return _fetch_bathy_nc(_bathy_url(BATHY_PRIMARY, dataset, var, lat0, lat1, lon0, lon1, stride), var)
+    last_lon = 180 - 0.5 / per_deg
+    lats, west_lons, west_z = _fetch_bathy_nc(
+        _bathy_url(BATHY_PRIMARY, dataset, var, lat0, lat1, min(lon0, last_lon), last_lon, stride), var
+    )
+    # Start the east half one stride on from the west half's last column, so the spacing stays even across 180°.
+    east_start = west_lons[-1] + stride / per_deg - 360
+    east_url = _bathy_url(BATHY_PRIMARY, dataset, var, lat0, lat1, east_start, lon1 - 360, stride)
+    _, east_lons, east_z = _fetch_bathy_nc(east_url, var)
+    return lats, np.concatenate([west_lons, east_lons + 360]), np.hstack([west_z, east_z])
+
+
 def _fetch_bathy_backup(dataset, lat0, lat1, lon0, lon1, stride, per_deg):
     """The PIFSC grid runs 0–360° east, so west longitudes are shifted, and a box across 0° is fetched in two halves."""
     if lon0 >= 0:
@@ -209,12 +224,12 @@ def fetch_bathy_grid(bounds: dict, grid: int, fine: bool = True) -> dict:
     lat0 = max(bounds["min_lat"] - cell, -90)
     lat1 = min(bounds["max_lat"] + cell, 90)
     lon0 = max(bounds["min_lon"] - cell, -180)
-    lon1 = min(bounds["max_lon"] + cell, 180)
+    lon1 = min(bounds["max_lon"] + cell, lon0 + 360)  # past 180 for a box across the dateline (see unwrap_dateline)
 
     fetched = None
     if time.time() >= _bathy_primary_down_until:
         try:
-            fetched = _fetch_bathy_nc(_bathy_url(BATHY_PRIMARY, dataset, var, lat0, lat1, lon0, lon1, stride), var)
+            fetched = _fetch_bathy_primary(dataset, var, lat0, lat1, lon0, lon1, stride, per_deg)
         except requests.RequestException:
             _bathy_primary_down_until = time.time() + BATHY_PRIMARY_RETRY_SEC
     if fetched is None:
@@ -846,6 +861,15 @@ def generate_kmz(filepath, name):
     return buf.getvalue()
 
 
+def unwrap_dateline(lon):
+    """Longitudes made continuous for a track across 180°: if it spans less in 0–360° than in ±180°, the western
+    half moves up by 360 (-155 -> 205), so the 3D box and seabed cover only the track, not the whole world."""
+    wrapped = np.mod(lon, 360.0)
+    if np.ptp(wrapped) < np.ptp(lon):
+        return wrapped
+    return lon
+
+
 def generate_3d_data(filepath):
     try:
         lat, lon, pres, temp, times = get_core_spatial_data(filepath, MAX_POINTS_3D)
@@ -956,6 +980,7 @@ def generate_3d_data(filepath):
     except Exception:
         pitch = roll = heading = None
 
+    lon = unwrap_dateline(lon)
     min_lon, max_lon = float(np.min(lon)), float(np.max(lon))
     min_lat, max_lat = float(np.min(lat)), float(np.max(lat))
     lon_pad = (max_lon - min_lon) * 0.15 or 0.1

@@ -195,7 +195,10 @@ def profiles_in(min_lat: float, max_lat: float, min_lon: float, max_lon: float, 
     try:
         lat = np.load(str(files["lat"]), mmap_mode="r")
         lon = np.load(str(files["lon"]), mmap_mode="r")
-        m = (lat >= min_lat) & (lat <= max_lat) & (lon >= min_lon) & (lon <= max_lon)
+        # Box longitudes may run past 180 for a track across the dateline (spatial_logic.unwrap_dateline):
+        # match floats on either side and return them in the box's range.
+        lon_in_box = min_lon + np.mod(lon - min_lon, 360.0)
+        m = (lat >= min_lat) & (lat <= max_lat) & (lon_in_box <= max_lon)
         idx = np.flatnonzero(m)
         rows = []
         if idx.size:
@@ -211,7 +214,7 @@ def profiles_in(min_lat: float, max_lat: float, min_lon: float, max_lon: float, 
                     ms = datetime.strptime(ds, "%Y%m%d%H%M%S").replace(tzinfo=timezone.utc).timestamp() * 1000.0
                 except ValueError:
                     continue
-                rows.append([int(wmo[j]), round(float(lat[idx[j]]), 4), round(float(lon[idx[j]]), 4), ms])
+                rows.append([int(wmo[j]), round(float(lat[idx[j]]), 4), round(float(lon_in_box[idx[j]]), 4), ms])
         out = {"status": "ready", "count": len(rows), "profiles": rows}
     except Exception as e:  # noqa: BLE001
         return {"status": "error", "error": str(e), "count": 0, "profiles": []}

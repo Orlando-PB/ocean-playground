@@ -909,6 +909,10 @@
                 if (p.lng < minLng) minLng = p.lng;
                 if (p.lng > maxLng) maxLng = p.lng;
             }
+            // A track across the dateline spans less measured on 0–360°: centre it there, not on the far side of the globe.
+            let min360 = Infinity, max360 = -Infinity;
+            for (const p of formattedPath) { const l = (p.lng + 360) % 360; if (l < min360) min360 = l; if (l > max360) max360 = l; }
+            if (max360 - min360 < maxLng - minLng) { minLng = min360; maxLng = max360; }
             const cLat = Math.cos((minLat + maxLat) / 2 * Math.PI / 180) || 1e-6;
             const spanKm = Math.hypot((maxLat - minLat) * 110.574, (maxLng - minLng) * 111.320 * cLat);
 
@@ -924,7 +928,7 @@
                 platformKind: raw.platform_kind || '',
                 view: {
                     centreLat: (minLat + maxLat) / 2,
-                    centreLng: (minLng + maxLng) / 2,
+                    centreLng: ((minLng + maxLng) / 2 + 540) % 360 - 180,
                     maxSpan: Math.max(maxLat - minLat, maxLng - minLng),
                 },
             };
